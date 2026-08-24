@@ -30,8 +30,8 @@ describe('opencode WardenPlugin fallback sessionKey', () => {
     const lines = fs
       .readFileSync(logFilePath, 'utf8')
       .split('\n')
-      .filter((l) => l.trim())
-      .map((l) => JSON.parse(l));
+      .filter((line) => line.trim())
+      .map((line) => JSON.parse(line));
     assert.match(lines[0].sessionKey, new RegExp(`^opencode-${process.pid}-`));
   });
 });

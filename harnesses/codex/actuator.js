@@ -156,8 +156,8 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((err) => {
-    process.stderr.write(`warden codex adapter error: ${err.message}`);
+  main().catch((error) => {
+    process.stderr.write(`warden codex adapter error: ${error.message}`);
     process.exit(0);
   });
 }

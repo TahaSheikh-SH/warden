@@ -132,7 +132,7 @@ describe('WardenPiExtension nudge dedup', () => {
       ui: { notify: (message, severity) => notifications.push({ message, severity }) },
     };
 
-    for (let i = 0; i < 4; i++) {
+    for (let turn = 0; turn < 4; turn++) {
       handlers.turn_end({ type: 'turn_end' }, ctx);
     }
 
@@ -188,9 +188,9 @@ describe('WardenPiExtension human notify wiring', () => {
         },
       };
       const calls = [];
-      const execFileFn = (cmd, args, cb) => {
-        calls.push({ cmd, args });
-        cb(null);
+      const execFileFn = (command, commandArgs, callback) => {
+        calls.push({ cmd: command, args: commandArgs });
+        callback(null);
       };
       WardenPiExtension(pi, { logFilePath, notifyOpts: { execFileFn } });
 
@@ -201,7 +201,7 @@ describe('WardenPiExtension human notify wiring', () => {
         ui: { notify: () => {} },
       };
 
-      for (let i = 0; i < 3; i++) {
+      for (let turn = 0; turn < 3; turn++) {
         handlers.turn_end({ type: 'turn_end' }, ctx);
       }
 
@@ -234,7 +234,7 @@ describe('WardenPiExtension STOP escalation', () => {
       ui: { notify: (message, severity) => notifications.push({ message, severity }) },
     };
 
-    for (let i = 0; i < 6; i++) {
+    for (let turn = 0; turn < 6; turn++) {
       handlers.turn_end({ type: 'turn_end' }, ctx);
     }
 

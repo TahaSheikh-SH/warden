@@ -18,7 +18,7 @@ function withTempLogFile(entries) {
     os.tmpdir(),
     `warden-logquery-test-${process.hrtime.bigint()}.jsonl`,
   );
-  const lines = entries.map((e) => JSON.stringify(e)).join('\n');
+  const lines = entries.map((entry) => JSON.stringify(entry)).join('\n');
   if (lines) fs.writeFileSync(logFilePath, lines + '\n');
   return logFilePath;
 }

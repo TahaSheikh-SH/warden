@@ -44,7 +44,7 @@ function loadSettings(settingsPath) {
 
 function isWardenHookEntry(entry, adapterPath) {
   return (entry.hooks || []).some(
-    (h) => h.type === 'command' && h.command && h.command.includes(adapterPath),
+    (hook) => hook.type === 'command' && hook.command && hook.command.includes(adapterPath),
   );
 }
 
@@ -113,7 +113,7 @@ function withWardenArrayEntryRegistered(settings, arrayKey, entryPath, baseDir) 
   const next = { ...settings };
   const existing = next[arrayKey] || [];
 
-  if (existing.some((p) => path.resolve(baseDir, p) === entryPath)) {
+  if (existing.some((existingPath) => path.resolve(baseDir, existingPath) === entryPath)) {
     return { settings: next, changed: false };
   }
 

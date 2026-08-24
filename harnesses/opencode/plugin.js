@@ -52,7 +52,7 @@ function createContextWindowResolver(client) {
     try {
       const result = await client.config.providers();
       const providers = (result && result.data && result.data.providers) || [];
-      const provider = providers.find((p) => p.id === providerID);
+      const provider = providers.find((candidate) => candidate.id === providerID);
       const model = provider && provider.models && provider.models[modelID];
       contextWindowTokens = (model && model.limit && model.limit.context) || null;
     } catch {

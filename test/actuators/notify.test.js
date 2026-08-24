@@ -10,7 +10,7 @@ const { ACTIONS } = require('../../decide');
 
 function withTempLogFile(entries) {
   const logFilePath = path.join(os.tmpdir(), `warden-notify-test-${process.hrtime.bigint()}.jsonl`);
-  const lines = entries.map((e) => JSON.stringify(e)).join('\n');
+  const lines = entries.map((entry) => JSON.stringify(entry)).join('\n');
   if (lines) fs.writeFileSync(logFilePath, lines + '\n');
   return logFilePath;
 }

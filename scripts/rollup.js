@@ -26,15 +26,15 @@ function resolveLogFiles(target) {
     return fs.existsSync(target) && fs.statSync(target).isDirectory()
       ? fs
           .readdirSync(target)
-          .filter((f) => f.endsWith('.jsonl'))
-          .map((f) => path.join(target, f))
+          .filter((fname) => fname.endsWith('.jsonl'))
+          .map((fname) => path.join(target, fname))
       : [target];
   }
   if (fs.existsSync(DEFAULT_SESSIONS_DIR)) {
     return fs
       .readdirSync(DEFAULT_SESSIONS_DIR)
-      .filter((f) => f.endsWith('.jsonl'))
-      .map((f) => path.join(DEFAULT_SESSIONS_DIR, f));
+      .filter((fname) => fname.endsWith('.jsonl'))
+      .map((fname) => path.join(DEFAULT_SESSIONS_DIR, fname));
   }
   return [LEGACY_LOG_FILE];
 }
@@ -83,30 +83,34 @@ function transcriptCompactedAfter(sessionKey, sinceTimestamp) {
 
 function rollup(entries) {
   const byAction = {};
-  for (const e of entries) {
-    byAction[e.action] = byAction[e.action] || { count: 0, sumContextPct: 0 };
-    byAction[e.action].count += 1;
-    byAction[e.action].sumContextPct += e.contextUsedPct || 0;
+  for (const entry of entries) {
+    byAction[entry.action] = byAction[entry.action] || { count: 0, sumContextPct: 0 };
+    byAction[entry.action].count += 1;
+    byAction[entry.action].sumContextPct += entry.contextUsedPct || 0;
   }
 
   // Follow-through: for each COMPACT/CHECKPOINT nudge, did the same
   // transcript show a compact_boundary after that timestamp?
-  const nudges = entries.filter((e) => e.action === 'COMPACT' || e.action === 'CHECKPOINT');
+  const nudges = entries.filter(
+    (entry) => entry.action === 'COMPACT' || entry.action === 'CHECKPOINT',
+  );
   let nudgesFollowed = 0;
-  for (const n of nudges) {
-    const sessionKey = n.sessionKey ?? n.transcriptPath;
-    if (transcriptCompactedAfter(sessionKey, n.timestamp)) nudgesFollowed += 1;
+  for (const nudge of nudges) {
+    const sessionKey = nudge.sessionKey ?? nudge.transcriptPath;
+    if (transcriptCompactedAfter(sessionKey, nudge.timestamp)) nudgesFollowed += 1;
   }
 
   // Override: for each HANDOFF/STOP block, did a later log entry exist
   // for the same transcript (i.e. the user kept going instead of starting
   // fresh)?
-  const blocks = entries.filter((e) => e.action === 'HANDOFF' || e.action === 'STOP');
+  const blocks = entries.filter((entry) => entry.action === 'HANDOFF' || entry.action === 'STOP');
   let blocksOverridden = 0;
-  for (const b of blocks) {
-    const bSessionKey = b.sessionKey ?? b.transcriptPath;
+  for (const block of blocks) {
+    const blockSessionKey = block.sessionKey ?? block.transcriptPath;
     const continuedSameTranscript = entries.some(
-      (e) => (e.sessionKey ?? e.transcriptPath) === bSessionKey && e.timestamp > b.timestamp,
+      (entry) =>
+        (entry.sessionKey ?? entry.transcriptPath) === blockSessionKey &&
+        entry.timestamp > block.timestamp,
     );
     if (continuedSameTranscript) blocksOverridden += 1;
   }
@@ -121,7 +125,7 @@ function rollup(entries) {
 }
 
 async function main() {
-  const logFiles = resolveLogFiles(process.argv[2]).filter((f) => fs.existsSync(f));
+  const logFiles = resolveLogFiles(process.argv[2]).filter((fname) => fs.existsSync(fname));
   if (logFiles.length === 0) {
     console.log('no log files found yet — nothing to roll up');
     return;
@@ -151,8 +155,8 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((err) => {
-    console.error(`rollup failed: ${err.message}`);
+  main().catch((error) => {
+    console.error(`rollup failed: ${error.message}`);
     process.exit(1);
   });
 }

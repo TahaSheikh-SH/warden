@@ -154,8 +154,8 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((err) => {
-    process.stderr.write(`warden native adapter error: ${err.message}`);
+  main().catch((error) => {
+    process.stderr.write(`warden native adapter error: ${error.message}`);
     process.exit(0); // fail open — a broken adapter must never block real work
   });
 }

@@ -9,9 +9,9 @@ const { loadEntries, transcriptCompactedAfter, rollup } = require('../../scripts
 
 describe('loadEntries', () => {
   test('parses JSONL, skipping blank and malformed trailing lines', async () => {
-    const p = path.join(os.tmpdir(), `warden-rollup-test-${process.hrtime.bigint()}.jsonl`);
-    fs.writeFileSync(p, '{"action":"COMPACT"}\n\n{"action":"HANDOFF"}\n{not valid json');
-    const entries = await loadEntries(p);
+    const filePath = path.join(os.tmpdir(), `warden-rollup-test-${process.hrtime.bigint()}.jsonl`);
+    fs.writeFileSync(filePath, '{"action":"COMPACT"}\n\n{"action":"HANDOFF"}\n{not valid json');
+    const entries = await loadEntries(filePath);
     assert.deepEqual(entries, [{ action: 'COMPACT' }, { action: 'HANDOFF' }]);
   });
 });
@@ -25,9 +25,12 @@ describe('transcriptCompactedAfter', () => {
   });
 
   test('returns true when a compact_boundary entry appears after the timestamp', () => {
-    const p = path.join(os.tmpdir(), `warden-rollup-transcript-${process.hrtime.bigint()}.jsonl`);
+    const filePath = path.join(
+      os.tmpdir(),
+      `warden-rollup-transcript-${process.hrtime.bigint()}.jsonl`,
+    );
     fs.writeFileSync(
-      p,
+      filePath,
       [
         JSON.stringify({
           type: 'system',
@@ -36,13 +39,16 @@ describe('transcriptCompactedAfter', () => {
         }),
       ].join('\n'),
     );
-    assert.equal(transcriptCompactedAfter(p, '2026-01-01T00:00:00Z'), true);
+    assert.equal(transcriptCompactedAfter(filePath, '2026-01-01T00:00:00Z'), true);
   });
 
   test('returns false when the compact_boundary is before the timestamp', () => {
-    const p = path.join(os.tmpdir(), `warden-rollup-transcript-${process.hrtime.bigint()}.jsonl`);
+    const filePath = path.join(
+      os.tmpdir(),
+      `warden-rollup-transcript-${process.hrtime.bigint()}.jsonl`,
+    );
     fs.writeFileSync(
-      p,
+      filePath,
       [
         JSON.stringify({
           type: 'system',
@@ -51,7 +57,7 @@ describe('transcriptCompactedAfter', () => {
         }),
       ].join('\n'),
     );
-    assert.equal(transcriptCompactedAfter(p, '2026-01-02T00:00:00Z'), false);
+    assert.equal(transcriptCompactedAfter(filePath, '2026-01-02T00:00:00Z'), false);
   });
 });
 

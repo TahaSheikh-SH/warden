@@ -59,7 +59,7 @@ describe('codex actuator computeEffectiveDecision', () => {
       sessionKey: '/transcripts/wired.jsonl',
       action: ACTIONS.HANDOFF,
     }));
-    fs.writeFileSync(logFilePath, entries.map((e) => JSON.stringify(e)).join('\n') + '\n');
+    fs.writeFileSync(logFilePath, entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n');
 
     const decision = { action: ACTIONS.HANDOFF, reasons: ['handoff reason'] };
     const result = computeEffectiveDecision(decision, '/transcripts/wired.jsonl', logFilePath);
@@ -85,12 +85,12 @@ describe('codex actuator logDecisionAndNotify', () => {
         sessionKey,
         action: ACTIONS.HANDOFF,
       }));
-      fs.writeFileSync(logFilePath, entries.map((e) => JSON.stringify(e) + '\n').join(''));
+      fs.writeFileSync(logFilePath, entries.map((entry) => JSON.stringify(entry) + '\n').join(''));
 
       const calls = [];
-      const execFileFn = (cmd, args, cb) => {
-        calls.push({ cmd, args });
-        cb(null);
+      const execFileFn = (command, commandArgs, callback) => {
+        calls.push({ cmd: command, args: commandArgs });
+        callback(null);
       };
 
       const state = { contextUsedPct: 0.5, compactionCount: 0, sessionAgeMinutes: 1 };

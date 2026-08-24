@@ -16,14 +16,14 @@ const path = require('path');
 const { buildResourceState } = require('../resourceState');
 const { decide } = require('../decide');
 
-function timestampAtLine(sessionFilePath, n) {
+function timestampAtLine(sessionFilePath, lineCount) {
   const lines = fs
     .readFileSync(sessionFilePath, 'utf8')
     .split('\n')
-    .filter((l) => l.trim());
-  for (let i = Math.min(n, lines.length) - 1; i >= 0; i -= 1) {
+    .filter((line) => line.trim());
+  for (let lineIdx = Math.min(lineCount, lines.length) - 1; lineIdx >= 0; lineIdx -= 1) {
     try {
-      const entry = JSON.parse(lines[i]);
+      const entry = JSON.parse(lines[lineIdx]);
       if (entry.timestamp) return entry.timestamp;
     } catch {
       continue;
@@ -36,17 +36,18 @@ async function backfill(sessionFilePath, stepLines, outFile) {
   const totalLines = fs
     .readFileSync(sessionFilePath, 'utf8')
     .split('\n')
-    .filter((l) => l.trim()).length;
+    .filter((line) => line.trim()).length;
   const checkpoints = [];
-  for (let n = stepLines; n < totalLines; n += stepLines) checkpoints.push(n);
+  for (let lineNum = stepLines; lineNum < totalLines; lineNum += stepLines)
+    checkpoints.push(lineNum);
   checkpoints.push(totalLines);
 
   const entries = [];
-  for (const n of checkpoints) {
-    const state = await buildResourceState(sessionFilePath, { maxLines: n });
+  for (const lineNum of checkpoints) {
+    const state = await buildResourceState(sessionFilePath, { maxLines: lineNum });
     const { action, reasons } = decide(state);
     entries.push({
-      timestamp: timestampAtLine(sessionFilePath, n),
+      timestamp: timestampAtLine(sessionFilePath, lineNum),
       sessionKey: sessionFilePath,
       action,
       reasons,
@@ -56,7 +57,7 @@ async function backfill(sessionFilePath, stepLines, outFile) {
     });
   }
 
-  const lines = entries.map((e) => JSON.stringify(e)).join('\n') + '\n';
+  const lines = entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n';
   fs.appendFileSync(outFile, lines);
   console.log(
     `wrote ${entries.length} entries from ${path.basename(sessionFilePath)} to ${outFile}`,
@@ -74,8 +75,8 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((err) => {
-    console.error(`backfill error: ${err.message}`);
+  main().catch((error) => {
+    console.error(`backfill error: ${error.message}`);
     process.exit(1);
   });
 }

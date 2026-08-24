@@ -81,10 +81,10 @@ describe('pi streamNormalizedEntries', () => {
         entries.push(entry);
       }
       const assistantUsages = entries
-        .filter((e) => e.type === 'assistant')
-        .map((e) => e.usage.inputTokens);
+        .filter((entry) => entry.type === 'assistant')
+        .map((entry) => entry.usage.inputTokens);
       assert.deepEqual(assistantUsages, [500, 200]);
-      assert.ok(entries.some((e) => e.isCompactionBoundary));
+      assert.ok(entries.some((entry) => entry.isCompactionBoundary));
       assert.equal(entries[0].sessionId, 'sess-1');
       assert.equal(entries[0].cwd, '/repo');
     } finally {

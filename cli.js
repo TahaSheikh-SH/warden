@@ -7,15 +7,15 @@ const { findLatestSessionFile } = require('./observe');
 function parseArgs(argv) {
   const flags = { contextWindowTokens: null };
   const positional = [];
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--context-window') {
-      const value = Number(argv[++i]);
+  for (let argIndex = 0; argIndex < argv.length; argIndex++) {
+    if (argv[argIndex] === '--context-window') {
+      const value = Number(argv[++argIndex]);
       if (!Number.isFinite(value) || value <= 0) {
         throw new Error('--context-window must be a positive number');
       }
       flags.contextWindowTokens = value;
     } else {
-      positional.push(argv[i]);
+      positional.push(argv[argIndex]);
     }
   }
   return { flags, positional };
@@ -55,12 +55,12 @@ async function main() {
   }
 
   console.log(`recommendation: ${decision.action}`);
-  for (const r of decision.reasons) {
-    console.log(`  - ${r}`);
+  for (const reason of decision.reasons) {
+    console.log(`  - ${reason}`);
   }
 }
 
-main().catch((err) => {
-  console.error(`governor error: ${err.message}`);
+main().catch((error) => {
+  console.error(`governor error: ${error.message}`);
   process.exit(1);
 });

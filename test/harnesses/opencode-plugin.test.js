@@ -89,9 +89,9 @@ describe('WardenPlugin human notify wiring', () => {
         `warden-opencode-test-notify-${process.hrtime.bigint()}.jsonl`,
       );
       const calls = [];
-      const execFileFn = (cmd, args, cb) => {
-        calls.push({ cmd, args });
-        cb(null);
+      const execFileFn = (command, commandArgs, callback) => {
+        calls.push({ cmd: command, args: commandArgs });
+        callback(null);
       };
       const plugin = await WardenPlugin({}, { logFilePath, notifyOpts: { execFileFn } });
       const sessionID = 'ses_notify';
@@ -107,7 +107,7 @@ describe('WardenPlugin human notify wiring', () => {
         },
       };
 
-      for (let i = 0; i < 3; i++) {
+      for (let turn = 0; turn < 3; turn++) {
         await plugin.event({ event: handoffEvent });
       }
 
@@ -139,7 +139,7 @@ describe('WardenPlugin STOP escalation', () => {
     };
 
     let finalOutput;
-    for (let i = 0; i < 6; i++) {
+    for (let turn = 0; turn < 6; turn++) {
       await plugin.event({ event: handoffEvent });
       finalOutput = { system: [] };
       await plugin['experimental.chat.system.transform']({}, finalOutput);

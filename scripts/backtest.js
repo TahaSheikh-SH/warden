@@ -15,20 +15,21 @@ async function backtest(sessionFilePath, stepLines) {
   const totalLines = fs
     .readFileSync(sessionFilePath, 'utf8')
     .split('\n')
-    .filter((l) => l.trim()).length;
+    .filter((line) => line.trim()).length;
   const checkpoints = [];
-  for (let n = stepLines; n < totalLines; n += stepLines) checkpoints.push(n);
+  for (let lineNum = stepLines; lineNum < totalLines; lineNum += stepLines)
+    checkpoints.push(lineNum);
   checkpoints.push(totalLines);
 
   console.log(`\n=== ${path.basename(sessionFilePath)} (${totalLines} lines) ===`);
 
   let lastAction = null;
-  for (const n of checkpoints) {
-    const state = await buildResourceState(sessionFilePath, { maxLines: n });
+  for (const lineNum of checkpoints) {
+    const state = await buildResourceState(sessionFilePath, { maxLines: lineNum });
     const { action, reasons } = decide(state);
     if (action !== lastAction) {
       console.log(
-        `  line ${n}/${totalLines}: ${action} ` +
+        `  line ${lineNum}/${totalLines}: ${action} ` +
           `(context ${(state.contextUsedPct * 100).toFixed(0)}%, ` +
           `${state.compactionCount} compactions, ${state.sessionAgeMinutes.toFixed(0)}m) — ${reasons[0]}`,
       );
@@ -53,7 +54,7 @@ async function main() {
   await backtest(sessionFilePath, Number(stepArg) || 50);
 }
 
-main().catch((err) => {
-  console.error(`backtest error: ${err.message}`);
+main().catch((error) => {
+  console.error(`backtest error: ${error.message}`);
   process.exit(1);
 });

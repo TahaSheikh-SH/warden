@@ -14,7 +14,7 @@ describe('WardenPlugin toast wiring', () => {
       `warden-opencode-test-${process.hrtime.bigint()}.jsonl`,
     );
     const toastCalls = [];
-    const client = { tui: { showToast: async (opts) => toastCalls.push(opts) } };
+    const client = { tui: { showToast: async (toastOptions) => toastCalls.push(toastOptions) } };
     const plugin = await WardenPlugin({ client }, { logFilePath });
     await plugin.event({
       event: {
@@ -46,7 +46,7 @@ describe('showToastForAction', () => {
 
   test('uses variant "error" for STOP and "warning" for everything else', async () => {
     const calls = [];
-    const client = { tui: { showToast: async (opts) => calls.push(opts) } };
+    const client = { tui: { showToast: async (toastOptions) => calls.push(toastOptions) } };
     await showToastForAction(client, ACTIONS.STOP, 'stop message');
     await showToastForAction(client, ACTIONS.HANDOFF, 'handoff message');
     assert.equal(calls[0].body.variant, 'error');

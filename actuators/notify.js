@@ -45,8 +45,8 @@ function notifyHuman(message, { execFileFn = execFile } = {}) {
     }
 
     try {
-      execFileFn(cmd, args, (err) => {
-        if (err) fallback();
+      execFileFn(cmd, args, (spawnError) => {
+        if (spawnError) fallback();
       });
     } catch {
       // binary genuinely missing — best-effort, give up quietly

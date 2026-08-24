@@ -19,7 +19,7 @@ function withTempLogFile(entries) {
     os.tmpdir(),
     `warden-escalation-test-${process.hrtime.bigint()}.jsonl`,
   );
-  const lines = entries.map((e) => JSON.stringify(e)).join('\n');
+  const lines = entries.map((entry) => JSON.stringify(entry)).join('\n');
   if (lines) fs.writeFileSync(logFilePath, lines + '\n');
   return logFilePath;
 }
@@ -57,7 +57,7 @@ describe('escalateHandoffToStop', () => {
     const result = escalateHandoffToStop(decision, 'session-a', logFilePath);
     assert.equal(result.action, ACTIONS.STOP);
     assert.ok(result.reasons.includes('handoff reason'));
-    assert.ok(result.reasons.some((r) => /ignored/i.test(r)));
+    assert.ok(result.reasons.some((reason) => /ignored/i.test(reason)));
   });
 
   test('is sticky: re-escalates to STOP immediately even with 0 trailing HANDOFF entries once STOP was logged for this session', () => {

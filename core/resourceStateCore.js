@@ -66,31 +66,31 @@ function initialAccumulator() {
 
 // First-wins session-level fields (sessionId/cwd/gitBranch/context window)
 // carried by whichever entry happens to report them first.
-function applyMetadata(acc, entry) {
-  acc.sessionId = acc.sessionId || entry.sessionId || null;
-  acc.cwd = acc.cwd || entry.cwd || null;
-  acc.gitBranch = acc.gitBranch || entry.gitBranch || null;
-  acc.detectedContextWindowTokens =
-    acc.detectedContextWindowTokens || entry.detectedContextWindowTokens || null;
+function applyMetadata(accumulator, entry) {
+  accumulator.sessionId = accumulator.sessionId || entry.sessionId || null;
+  accumulator.cwd = accumulator.cwd || entry.cwd || null;
+  accumulator.gitBranch = accumulator.gitBranch || entry.gitBranch || null;
+  accumulator.detectedContextWindowTokens =
+    accumulator.detectedContextWindowTokens || entry.detectedContextWindowTokens || null;
 }
 
-function applyTimestamp(acc, entry) {
+function applyTimestamp(accumulator, entry) {
   if (!entry.timestamp) return;
-  acc.firstTimestamp = acc.firstTimestamp || entry.timestamp;
-  acc.lastTimestamp = entry.timestamp;
+  accumulator.firstTimestamp = accumulator.firstTimestamp || entry.timestamp;
+  accumulator.lastTimestamp = entry.timestamp;
 }
 
 // Compaction resets the growth window: token counts before a compaction
 // don't predict growth after one, since the context was just rewritten.
-function applyCompactionBoundary(acc, entry) {
+function applyCompactionBoundary(accumulator, entry) {
   if (!entry.isCompactionBoundary) return;
-  acc.compactionCount += 1;
-  acc.recentTurnTokens = [];
+  accumulator.compactionCount += 1;
+  accumulator.recentTurnTokens = [];
 }
 
-function applyAssistantUsage(acc, entry) {
+function applyAssistantUsage(accumulator, entry) {
   if (entry.type !== 'assistant') return;
-  acc.messageCount += 1;
+  accumulator.messageCount += 1;
 
   const usage = entry.usage;
   if (!usage) return;
@@ -100,70 +100,72 @@ function applyAssistantUsage(acc, entry) {
   const cacheRead = usage.cacheReadTokens || 0;
   const cacheCreation = usage.cacheCreationTokens || 0;
 
-  acc.totalInputTokens += input;
-  acc.totalOutputTokens += output;
-  acc.totalCacheReadTokens += cacheRead;
-  acc.totalCacheCreationTokens += cacheCreation;
+  accumulator.totalInputTokens += input;
+  accumulator.totalOutputTokens += output;
+  accumulator.totalCacheReadTokens += cacheRead;
+  accumulator.totalCacheCreationTokens += cacheCreation;
 
-  acc.lastTurnContextTokens = input + cacheRead + cacheCreation;
-  acc.recentTurnTokens.push(acc.lastTurnContextTokens);
-  if (acc.recentTurnTokens.length > GROWTH_WINDOW_TURNS) {
-    acc.recentTurnTokens.shift();
+  accumulator.lastTurnContextTokens = input + cacheRead + cacheCreation;
+  accumulator.recentTurnTokens.push(accumulator.lastTurnContextTokens);
+  if (accumulator.recentTurnTokens.length > GROWTH_WINDOW_TURNS) {
+    accumulator.recentTurnTokens.shift();
   }
 }
 
-// Mutates and returns acc. Split out from reduceTranscriptEntries so a
+// Mutates and returns accumulator. Split out from reduceTranscriptEntries so a
 // caller with a persistent accumulator can fold only new entries instead
 // of replaying the whole transcript each turn (was O(n^2) over a session).
-function foldEntry(acc, entry) {
-  if (!entry) return acc;
-  applyMetadata(acc, entry);
-  applyTimestamp(acc, entry);
-  applyCompactionBoundary(acc, entry);
-  applyAssistantUsage(acc, entry);
-  return acc;
+function foldEntry(accumulator, entry) {
+  if (!entry) return accumulator;
+  applyMetadata(accumulator, entry);
+  applyTimestamp(accumulator, entry);
+  applyCompactionBoundary(accumulator, entry);
+  applyAssistantUsage(accumulator, entry);
+  return accumulator;
 }
 
 // Pure aside from Date.now() for lastActivityAgeMinutes.
-function finalizeAccumulator(acc, opts = {}) {
+function finalizeAccumulator(accumulator, opts = {}) {
   const contextWindowTokens =
-    opts.contextWindowTokens || acc.detectedContextWindowTokens || DEFAULT_CONTEXT_WINDOW_TOKENS;
+    opts.contextWindowTokens ||
+    accumulator.detectedContextWindowTokens ||
+    DEFAULT_CONTEXT_WINDOW_TOKENS;
 
-  const contextUsedTokens = acc.lastTurnContextTokens;
+  const contextUsedTokens = accumulator.lastTurnContextTokens;
   const contextUsedPct = contextWindowTokens > 0 ? contextUsedTokens / contextWindowTokens : 0;
 
   const { contextGrowthPerTurn, projectedTurnsUntilOverflow } = computeGrowthProjection(
-    acc.recentTurnTokens,
+    accumulator.recentTurnTokens,
     contextWindowTokens,
     contextUsedTokens,
   );
 
   const sessionAgeMinutes =
-    acc.firstTimestamp && acc.lastTimestamp
-      ? (new Date(acc.lastTimestamp) - new Date(acc.firstTimestamp)) / 60000
+    accumulator.firstTimestamp && accumulator.lastTimestamp
+      ? (new Date(accumulator.lastTimestamp) - new Date(accumulator.firstTimestamp)) / 60000
       : 0;
 
-  const lastActivityAgeMinutes = acc.lastTimestamp
-    ? (Date.now() - new Date(acc.lastTimestamp).getTime()) / 60000
+  const lastActivityAgeMinutes = accumulator.lastTimestamp
+    ? (Date.now() - new Date(accumulator.lastTimestamp).getTime()) / 60000
     : null;
 
   return {
-    sessionId: acc.sessionId,
-    cwd: acc.cwd,
-    gitBranch: acc.gitBranch,
+    sessionId: accumulator.sessionId,
+    cwd: accumulator.cwd,
+    gitBranch: accumulator.gitBranch,
     contextWindowTokens,
     contextUsedTokens,
     contextUsedPct,
     contextGrowthPerTurn,
     projectedTurnsUntilOverflow,
-    totalInputTokens: acc.totalInputTokens,
-    totalOutputTokens: acc.totalOutputTokens,
-    totalCacheReadTokens: acc.totalCacheReadTokens,
-    totalCacheCreationTokens: acc.totalCacheCreationTokens,
-    compactionCount: acc.compactionCount,
+    totalInputTokens: accumulator.totalInputTokens,
+    totalOutputTokens: accumulator.totalOutputTokens,
+    totalCacheReadTokens: accumulator.totalCacheReadTokens,
+    totalCacheCreationTokens: accumulator.totalCacheCreationTokens,
+    compactionCount: accumulator.compactionCount,
     sessionAgeMinutes,
     lastActivityAgeMinutes,
-    messageCount: acc.messageCount,
+    messageCount: accumulator.messageCount,
   };
 }
 
@@ -175,11 +177,11 @@ function finalizeAccumulator(acc, opts = {}) {
  * directly instead, to avoid re-folding entries already folded earlier.
  */
 async function reduceTranscriptEntries(entries, opts = {}) {
-  const acc = initialAccumulator();
+  const accumulator = initialAccumulator();
   for await (const entry of entries) {
-    foldEntry(acc, entry);
+    foldEntry(accumulator, entry);
   }
-  return finalizeAccumulator(acc, opts);
+  return finalizeAccumulator(accumulator, opts);
 }
 
 module.exports = {

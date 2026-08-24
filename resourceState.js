@@ -22,7 +22,7 @@ const {
 const { decide } = require('./decide');
 
 // native.js/codex spawns a fresh process per turn, so this persists
-// {lineCount, fileSize, acc} to disk between invocations — otherwise every
+// {lineCount, fileSize, accumulator} to disk between invocations — otherwise every
 // turn re-streams and re-folds from line 1 (O(n^2) over a session).
 const CACHE_DIR = path.join(os.homedir(), '.warden', 'cache');
 
@@ -64,7 +64,7 @@ async function buildResourceState(sessionFilePath, opts = {}) {
   const contextWindowTokens = opts.contextWindowTokens || DEFAULT_CONTEXT_WINDOW_TOKENS;
   const useCache = !opts.maxLines;
   const cached = useCache ? readAccumulatorCache(sessionFilePath) : null;
-  const acc = cached ? cached.acc : initialAccumulator();
+  const accumulator = cached ? cached.accumulator : initialAccumulator();
   const progress = { lineCount: cached ? cached.lineCount : 0 };
 
   const entries = streamNormalizedEntries(sessionFilePath, {
@@ -73,18 +73,18 @@ async function buildResourceState(sessionFilePath, opts = {}) {
     progress,
   });
   for await (const entry of entries) {
-    foldEntry(acc, entry);
+    foldEntry(accumulator, entry);
   }
 
   if (useCache) {
     writeAccumulatorCache(sessionFilePath, {
       lineCount: progress.lineCount,
       fileSize: fs.statSync(sessionFilePath).size,
-      acc,
+      accumulator,
     });
   }
 
-  const state = finalizeAccumulator(acc, { contextWindowTokens });
+  const state = finalizeAccumulator(accumulator, { contextWindowTokens });
   return { ...state, sessionFilePath };
 }
 

@@ -45,17 +45,17 @@ const PRICING = {
 
 function priceFor(modelId) {
   if (!modelId) return PRICING.default;
-  const key = Object.keys(PRICING).find((k) => modelId.includes(k));
+  const key = Object.keys(PRICING).find((pricingKey) => modelId.includes(pricingKey));
   return key ? PRICING[key] : PRICING.default;
 }
 
 function turnCost(usage, modelId) {
-  const p = priceFor(modelId);
+  const rates = priceFor(modelId);
   return (
-    usage.inputTokens * p.input +
-    usage.outputTokens * p.output +
-    usage.cacheCreationTokens * p.cacheWrite +
-    usage.cacheReadTokens * p.cacheRead
+    usage.inputTokens * rates.input +
+    usage.outputTokens * rates.output +
+    usage.cacheCreationTokens * rates.cacheWrite +
+    usage.cacheReadTokens * rates.cacheRead
   );
 }
 
@@ -85,12 +85,12 @@ async function run(sessionFilePath, graceTurns) {
   let turnIndex = 0;
   for await (const entry of readRawEntries(sessionFilePath)) {
     if (entry.type !== 'assistant' || !entry.message || !entry.message.usage) continue;
-    const u = entry.message.usage;
+    const rawUsage = entry.message.usage;
     const usage = {
-      inputTokens: u.input_tokens || 0,
-      outputTokens: u.output_tokens || 0,
-      cacheCreationTokens: u.cache_creation_input_tokens || 0,
-      cacheReadTokens: u.cache_read_input_tokens || 0,
+      inputTokens: rawUsage.input_tokens || 0,
+      outputTokens: rawUsage.output_tokens || 0,
+      cacheCreationTokens: rawUsage.cache_creation_input_tokens || 0,
+      cacheReadTokens: rawUsage.cache_read_input_tokens || 0,
     };
     const cost = turnCost(usage, entry.message.model);
     cumulativeCost += cost;
@@ -109,13 +109,13 @@ async function run(sessionFilePath, graceTurns) {
   const totalLines = fs
     .readFileSync(sessionFilePath, 'utf8')
     .split('\n')
-    .filter((l) => l.trim()).length;
+    .filter((line) => line.trim()).length;
   let handoffLine = null;
-  for (let n = 10; n <= totalLines; n += 10) {
-    const state = await buildResourceState(sessionFilePath, { maxLines: n });
+  for (let lineNum = 10; lineNum <= totalLines; lineNum += 10) {
+    const state = await buildResourceState(sessionFilePath, { maxLines: lineNum });
     const { action } = decide(state);
     if (action === 'HANDOFF' && handoffLine === null) {
-      handoffLine = n;
+      handoffLine = lineNum;
       break;
     }
   }
@@ -173,7 +173,7 @@ async function main() {
   await run(sessionFilePath, Number(graceArg) || 5);
 }
 
-main().catch((err) => {
-  console.error(`cost-curve error: ${err.message}`);
+main().catch((error) => {
+  console.error(`cost-curve error: ${error.message}`);
   process.exit(1);
 });

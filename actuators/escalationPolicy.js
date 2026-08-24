@@ -29,11 +29,11 @@ const NOTIFY_MILESTONES = [NOTIFY_TURN_LIMIT, GRACE_TURN_LIMIT];
 function getLastNudgedAction(sessionKey, logFilePath = sessionLogFile(sessionKey)) {
   try {
     const lines = readLogLines(logFilePath);
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (!lines[i]) continue;
+    for (let lineIndex = lines.length - 1; lineIndex >= 0; lineIndex--) {
+      if (!lines[lineIndex]) continue;
       let entry;
       try {
-        entry = JSON.parse(lines[i]);
+        entry = JSON.parse(lines[lineIndex]);
       } catch {
         continue;
       }
@@ -76,11 +76,11 @@ function countTrailingAction(
   try {
     const allLines = lines ?? readLogLines(logFilePath);
     let count = 0;
-    for (let i = allLines.length - 1; i >= 0; i--) {
-      if (!allLines[i]) continue;
+    for (let lineIndex = allLines.length - 1; lineIndex >= 0; lineIndex--) {
+      if (!allLines[lineIndex]) continue;
       let entry;
       try {
-        entry = JSON.parse(allLines[i]);
+        entry = JSON.parse(allLines[lineIndex]);
       } catch {
         continue;
       }
@@ -105,8 +105,8 @@ function notifyMarkerFile(logFilePath) {
 function readNotifiedMilestone(markerFilePath) {
   try {
     if (!fs.existsSync(markerFilePath)) return 0;
-    const n = Number(fs.readFileSync(markerFilePath, 'utf8').trim());
-    return Number.isFinite(n) ? n : 0;
+    const parsedMilestone = Number(fs.readFileSync(markerFilePath, 'utf8').trim());
+    return Number.isFinite(parsedMilestone) ? parsedMilestone : 0;
   } catch {
     return 0;
   }

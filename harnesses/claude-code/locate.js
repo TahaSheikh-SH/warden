@@ -24,12 +24,12 @@ function findLatestSessionFile(cwd = process.cwd()) {
 
   const sessionFiles = fs
     .readdirSync(projectDir)
-    .filter((f) => f.endsWith('.jsonl'))
-    .map((f) => {
-      const full = path.join(projectDir, f);
+    .filter((filename) => filename.endsWith('.jsonl'))
+    .map((filename) => {
+      const full = path.join(projectDir, filename);
       return { full, mtime: fs.statSync(full).mtimeMs };
     })
-    .sort((a, b) => b.mtime - a.mtime);
+    .sort((left, right) => right.mtime - left.mtime);
 
   if (sessionFiles.length === 0) {
     throw new Error(`no session files found in ${projectDir}`);
