@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /absolute/path/to/warden/actuators/native.js"
+          }
+        ]
+      }
+    ]
+  }
+}

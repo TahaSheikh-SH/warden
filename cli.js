@@ -1,0 +1,66 @@
+#!/usr/bin/env node
+'use strict';
+
+const { evaluateSession } = require('./resourceState');
+const { findLatestSessionFile } = require('./observe');
+
+function parseArgs(argv) {
+  const flags = { contextWindowTokens: null };
+  const positional = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--context-window') {
+      const value = Number(argv[++i]);
+      if (!Number.isFinite(value) || value <= 0) {
+        throw new Error('--context-window must be a positive number');
+      }
+      flags.contextWindowTokens = value;
+    } else {
+      positional.push(argv[i]);
+    }
+  }
+  return { flags, positional };
+}
+
+/**
+ * Layer 3 (harness-specific, advisory-only for v0): prints a recommendation.
+ * No auto-kill, no auto-relaunch — that belongs in the actuator layer.
+ */
+async function main() {
+  const { flags, positional } = parseArgs(process.argv.slice(2));
+  const sessionFilePath = positional[0] || findLatestSessionFile();
+
+  const { state, decision } = await evaluateSession(sessionFilePath, {
+    contextWindowTokens: flags.contextWindowTokens || undefined,
+  });
+
+  console.log(`session       ${state.sessionId}`);
+  console.log(`cwd           ${state.cwd}`);
+  console.log(`branch        ${state.gitBranch}`);
+  console.log(
+    `context       ${state.contextUsedTokens.toLocaleString()} / ${state.contextWindowTokens.toLocaleString()} tokens (${(state.contextUsedPct * 100).toFixed(1)}%)`,
+  );
+  console.log(`compactions   ${state.compactionCount}`);
+  console.log(`session age   ${state.sessionAgeMinutes.toFixed(0)}m`);
+  console.log(`messages      ${state.messageCount}`);
+  console.log('');
+
+  if (!decision) {
+    console.log(
+      `recommendation: UNKNOWN — context used (${state.contextUsedTokens.toLocaleString()} tokens) ` +
+        `exceeds the assumed ${state.contextWindowTokens.toLocaleString()}-token window. This model/session ` +
+        `likely has a larger real window (e.g. Sonnet 1M) than the default. Re-run with ` +
+        `--context-window <real size> to get a trustworthy recommendation.`,
+    );
+    return;
+  }
+
+  console.log(`recommendation: ${decision.action}`);
+  for (const r of decision.reasons) {
+    console.log(`  - ${r}`);
+  }
+}
+
+main().catch((err) => {
+  console.error(`governor error: ${err.message}`);
+  process.exit(1);
+});
