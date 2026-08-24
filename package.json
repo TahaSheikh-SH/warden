@@ -1,0 +1,53 @@
+{
+  "name": "warden",
+  "version": "0.1.0",
+  "description": "Watches your coding-agent session and warns before the context window runs out, escalating as it fills up.",
+  "private": true,
+  "license": "MIT",
+  "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TahaSheikh-SH/warden.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TahaSheikh-SH/warden/issues"
+  },
+  "homepage": "https://github.com/TahaSheikh-SH/warden#readme",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "opencode",
+    "ai-agent",
+    "llm-agent",
+    "context-window",
+    "context-management",
+    "token-budget",
+    "agent-observability",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "warden": "./cli.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "setup": "node scripts/setup.js",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "deps:unused": "knip --dependencies",
+    "deps:circular": "dpdm --no-warning --no-tree --exit-code circular:1 \"*.js\" \"actuators/*.js\" \"scripts/*.js\"",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "dpdm": "^4.3.0",
+    "husky": "^9.1.7",
+    "knip": "^6.32.2",
+    "lint-staged": "^17.3.0",
+    "oxlint": "^1.79.0",
+    "prettier": "^3.9.6"
+  }
+}
