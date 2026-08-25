@@ -60,6 +60,25 @@ function validateTranscriptEntry(entry) {
   return { valid: errors.length === 0, errors };
 }
 
+// Claude Code transcripts report no context window, only `message.model`, so
+// resolve it here rather than in the core (AGENTS.md "Read context limits from
+// the harness/model"). Unlisted models resolve to null — an unknown window,
+// not an assumed one. Patterns are pairwise disjoint, so order doesn't matter;
+// a test pins that, since an overlapping addition would change it silently.
+const MODEL_CONTEXT_WINDOWS = [
+  [/^claude-(sonnet|opus)-4-[6-9]/, 1000000],
+  [/^claude-(fable|sonnet|opus)-[5-9]/, 1000000],
+  [/^claude-(sonnet|opus)-4-[0-5]/, 200000],
+  [/^claude-haiku-/, 200000],
+  [/^claude-3/, 200000],
+];
+
+function contextWindowForModel(model) {
+  if (typeof model !== 'string' || !model) return null;
+  const match = MODEL_CONTEXT_WINDOWS.find(([pattern]) => pattern.test(model));
+  return match ? match[1] : null;
+}
+
 /**
  * Maps a single raw (already-validated) Claude Code transcript entry to the
  * harness-agnostic NormalizedTranscriptEntry shape core/resourceStateCore.js
@@ -84,6 +103,9 @@ function normalizeEntry(entry) {
     sessionId: entry.sessionId || null,
     cwd: entry.cwd || null,
     gitBranch: entry.gitBranch || null,
+    // First-wins in the core reducer, so a mid-session /model switch keeps the
+    // first model's window — same as Codex's per-turn model_context_window.
+    detectedContextWindowTokens: contextWindowForModel(entry.message && entry.message.model),
   };
 }
 
@@ -133,4 +155,10 @@ async function* streamNormalizedEntries(sessionFilePath, opts = {}) {
   }
 }
 
-module.exports = { validateTranscriptEntry, normalizeEntry, streamNormalizedEntries };
+module.exports = {
+  validateTranscriptEntry,
+  normalizeEntry,
+  streamNormalizedEntries,
+  contextWindowForModel,
+  MODEL_CONTEXT_WINDOWS,
+};
