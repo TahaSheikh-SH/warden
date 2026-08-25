@@ -20,6 +20,7 @@ const { decide, ACTIONS } = require('../../decide');
 const {
   nudgeMessageFor,
   appendLogEntry,
+  getLastNudgedAction,
   escalateHandoffToStop,
   maybeNotifyHuman,
 } = require('../../actuators/shared');
@@ -118,6 +119,14 @@ async function showToastForAction(client, action, message) {
   }
 }
 
+// message.updated fires repeatedly while one assistant message streams,
+// carrying the same info.id each time. Null for any other event shape.
+function streamingMessageId(event) {
+  const info =
+    event && event.type === 'message.updated' && event.properties && event.properties.info;
+  return (info && info.id) || null;
+}
+
 async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindowTokens } = {}) {
   const client = input && input.client;
   const evaluator = createSessionEvaluator({ client, logFilePath, contextWindowTokens });
@@ -127,9 +136,8 @@ async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindow
   // Fallback for normalizeEvent's null sessionId, so such sessions don't
   // collapse into one shared escalation/dedup bucket.
   const fallbackSessionKey = `opencode-${process.pid}-${Date.now()}`;
-  // message.updated fires repeatedly while one assistant message streams
-  // (same info.id each time) — dedup so GRACE_TURN_LIMIT can't exhaust
-  // within a single turn.
+  // Dedup on streamingMessageId so GRACE_TURN_LIMIT can't exhaust within a
+  // single turn.
   let lastProcessedMessageId = null;
   // Unlike pendingMessage, never cleared by system-prompt-transform —
   // tool.execute.before needs to keep blocking every tool call for as long
@@ -142,13 +150,19 @@ async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindow
       if (!result || !result.decision) return;
       if (result.decision.action === ACTIONS.CONTINUE) return;
 
-      const info =
-        event && event.type === 'message.updated' && event.properties && event.properties.info;
-      const messageId = info && info.id;
+      const messageId = streamingMessageId(event);
       if (messageId && messageId === lastProcessedMessageId) return;
       if (messageId) lastProcessedMessageId = messageId;
 
       const sessionKey = result.state.sessionId || fallbackSessionKey;
+      // Dedup like native.js/pi's alreadyNudgedThisAction. decide() is
+      // stateless, so it re-emits the same action every turn once a floor is
+      // crossed; without this the toast and the system-prompt injection
+      // repeat it for the rest of the session. Read BEFORE logDecision
+      // appends this turn's own entry.
+      const alreadyNudgedThisAction =
+        getLastNudgedAction(sessionKey, evaluator.logFilePath) === result.decision.action;
+
       const effectiveDecision = escalateHandoffToStop(
         result.decision,
         sessionKey,
@@ -160,13 +174,17 @@ async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindow
       // No turn-abort hook exists in the OpenCode SDK (anomalyco/opencode#16626,
       // unresolved) — but tool.execute.before can throw to reject a tool
       // call, so STOP uses that instead of relying on the toast alone.
-      pendingMessage = respondFor(
-        effectiveDecision.action,
-        effectiveDecision.reasons,
-        result.state,
-      );
-      stopBlockMessage = effectiveDecision.action === ACTIONS.STOP ? pendingMessage : null;
-      await showToastForAction(client, effectiveDecision.action, pendingMessage);
+      const message = respondFor(effectiveDecision.action, effectiveDecision.reasons, result.state);
+      // Armed before the dedup return below: the block has to hold for every
+      // tool call while the session stays STOP'd, whether or not this
+      // particular turn re-shows the message.
+      stopBlockMessage = effectiveDecision.action === ACTIONS.STOP ? message : null;
+
+      if ((effectiveDecision.action !== ACTIONS.STOP && alreadyNudgedThisAction) || !message)
+        return;
+
+      pendingMessage = message;
+      await showToastForAction(client, effectiveDecision.action, message);
     },
     'experimental.chat.system.transform': async (_input, output) => {
       if (!pendingMessage) return;

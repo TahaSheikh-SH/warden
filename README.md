@@ -88,8 +88,12 @@ reach you. If you don't want to rely on `WARDEN_NOTIFY`'s OS popups,
 as a line in Claude Code's `statusLine` footer, deterministically and
 without needing notification permissions.
 
-Add it to your `statusLine` command (append to an existing script, or use
-directly if you don't have one):
+`npm run setup` wires this for you. If you have no `statusLine` yet, it
+points `statusLine` straight at warden. If you already have one, it
+generates `~/.warden/claude-statusline.sh` — a wrapper that runs your
+existing command and then warden's, feeding both the same stdin payload —
+and points `statusLine` at that. Your own script is never edited, so
+reinstalling it doesn't drop warden's line. To wire it by hand instead:
 
 ```bash
 node /path/to/warden/actuators/statusline.js
