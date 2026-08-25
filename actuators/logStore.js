@@ -20,6 +20,26 @@ function sessionLogFile(sessionKey) {
   return path.join(SESSIONS_DIR, `${safeKey}.jsonl`);
 }
 
+// The most recently written per-session log, falling back to the legacy
+// shared log when no per-session logs exist. Readers that want "the latest
+// decision across all sessions" must resolve the file this way: nothing has
+// appended to LOG_FILE since per-session files landed, so reading LOG_FILE
+// directly pins the reader to whatever was last written before that split.
+function latestLogFile(sessionsDir = SESSIONS_DIR) {
+  try {
+    const files = fs
+      .readdirSync(sessionsDir)
+      .filter((name) => name.endsWith('.jsonl'))
+      .map((name) => path.join(sessionsDir, name));
+    if (!files.length) return LOG_FILE;
+    return files.reduce((newest, candidate) =>
+      fs.statSync(candidate).mtimeMs > fs.statSync(newest).mtimeMs ? candidate : newest,
+    );
+  } catch {
+    return LOG_FILE; // sessions dir missing/unreadable — legacy log is the best available
+  }
+}
+
 function appendLogEntry(entry, logFile = sessionLogFile(entry.sessionKey)) {
   try {
     const logDir = path.dirname(logFile);
@@ -41,4 +61,12 @@ function readLogLines(logFilePath) {
   }
 }
 
-module.exports = { LOG_DIR, LOG_FILE, SESSIONS_DIR, sessionLogFile, appendLogEntry, readLogLines };
+module.exports = {
+  LOG_DIR,
+  LOG_FILE,
+  SESSIONS_DIR,
+  sessionLogFile,
+  latestLogFile,
+  appendLogEntry,
+  readLogLines,
+};

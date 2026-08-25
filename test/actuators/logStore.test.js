@@ -7,8 +7,10 @@ const os = require('os');
 const path = require('path');
 const {
   LOG_DIR,
+  LOG_FILE,
   SESSIONS_DIR,
   sessionLogFile,
+  latestLogFile,
   appendLogEntry,
   readLogLines,
 } = require('../../actuators/logStore');
@@ -30,6 +32,61 @@ describe('sessionLogFile', () => {
     const a = sessionLogFile('session-a');
     const b = sessionLogFile('session-b');
     assert.notEqual(a, b);
+  });
+});
+
+describe('latestLogFile', () => {
+  function withTempSessionsDir(files) {
+    const dir = path.join(os.tmpdir(), `warden-sessions-test-${process.hrtime.bigint()}`);
+    fs.mkdirSync(dir, { recursive: true });
+    // mtime is set explicitly rather than relying on write order — two writes
+    // in the same millisecond would otherwise make "newest" a coin flip.
+    files.forEach(({ name, mtimeMs }) => {
+      const filePath = path.join(dir, name);
+      fs.writeFileSync(filePath, '{}\n');
+      fs.utimesSync(filePath, mtimeMs / 1000, mtimeMs / 1000);
+    });
+    return dir;
+  }
+
+  test('returns the most recently modified per-session log', () => {
+    const dir = withTempSessionsDir([
+      { name: 'old.jsonl', mtimeMs: 1_700_000_000_000 },
+      { name: 'newest.jsonl', mtimeMs: 1_800_000_000_000 },
+      { name: 'middle.jsonl', mtimeMs: 1_750_000_000_000 },
+    ]);
+    try {
+      assert.equal(latestLogFile(dir), path.join(dir, 'newest.jsonl'));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // .notified marker files live in the same directory and are not decision logs.
+  test('ignores non-.jsonl files even when they are newer', () => {
+    const dir = withTempSessionsDir([
+      { name: 'real.jsonl', mtimeMs: 1_700_000_000_000 },
+      { name: 'real.jsonl.notified', mtimeMs: 1_900_000_000_000 },
+    ]);
+    try {
+      assert.equal(latestLogFile(dir), path.join(dir, 'real.jsonl'));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('falls back to the legacy shared log when no per-session logs exist', () => {
+    const dir = withTempSessionsDir([]);
+    try {
+      assert.equal(latestLogFile(dir), LOG_FILE);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('falls back to the legacy shared log when the sessions dir is missing', () => {
+    const missing = path.join(os.tmpdir(), `warden-sessions-missing-${process.hrtime.bigint()}`);
+    assert.equal(latestLogFile(missing), LOG_FILE);
   });
 });
 

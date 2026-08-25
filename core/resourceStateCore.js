@@ -11,7 +11,9 @@
 //     type: string | null,            // 'assistant' | 'user' | 'system' | ...
 //     timestamp: string | null,       // ISO-ish, anything `new Date()` parses
 //     usage: {
-//       inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens,
+//       inputTokens, outputTokens, cacheReadTokens,
+//       cacheCreationTokens: number | null,  // null = harness cannot report
+//         // cache writes at all (Codex), which is not a measured zero
 //     } | null,
 //     isCompactionBoundary: boolean,
 //     sessionId, cwd, gitBranch: string | null (optional, first-wins)
@@ -57,6 +59,10 @@ function initialAccumulator() {
     totalCacheCreationTokens: 0,
     compactionCount: 0,
     lastTurnContextTokens: 0,
+    lastTurnCacheReadTokens: 0,
+    // null until an assistant turn actually reports a number — see
+    // applyAssistantUsage for why unknown must not collapse into 0.
+    lastTurnCacheCreationTokens: null,
     recentTurnTokens: [],
   };
 }
@@ -96,14 +102,22 @@ function applyAssistantUsage(accumulator, entry) {
   const input = usage.inputTokens || 0;
   const output = usage.outputTokens || 0;
   const cacheRead = usage.cacheReadTokens || 0;
-  const cacheCreation = usage.cacheCreationTokens || 0;
+  // A harness that cannot report cache writes at all sends null, and that is
+  // not a measured zero: a cost rule reading it as one would conclude
+  // compaction is free there and silently never fire. Totals fold unknown as
+  // 0 to stay additive, so any such rule must read the last-turn field below
+  // and handle its null explicitly.
+  const cacheCreation =
+    typeof usage.cacheCreationTokens === 'number' ? usage.cacheCreationTokens : null;
 
   accumulator.totalInputTokens += input;
   accumulator.totalOutputTokens += output;
   accumulator.totalCacheReadTokens += cacheRead;
-  accumulator.totalCacheCreationTokens += cacheCreation;
+  accumulator.totalCacheCreationTokens += cacheCreation || 0;
 
-  accumulator.lastTurnContextTokens = input + cacheRead + cacheCreation;
+  accumulator.lastTurnCacheReadTokens = cacheRead;
+  accumulator.lastTurnCacheCreationTokens = cacheCreation;
+  accumulator.lastTurnContextTokens = input + cacheRead + (cacheCreation || 0);
   accumulator.recentTurnTokens.push(accumulator.lastTurnContextTokens);
   if (accumulator.recentTurnTokens.length > GROWTH_WINDOW_TURNS) {
     accumulator.recentTurnTokens.shift();
@@ -168,6 +182,10 @@ function finalizeAccumulator(accumulator, opts = {}) {
     totalOutputTokens: accumulator.totalOutputTokens,
     totalCacheReadTokens: accumulator.totalCacheReadTokens,
     totalCacheCreationTokens: accumulator.totalCacheCreationTokens,
+    // Last-turn split, for rules that need to price the cache rather than
+    // just size the context. No rule consumes these yet.
+    lastTurnCacheReadTokens: accumulator.lastTurnCacheReadTokens,
+    lastTurnCacheCreationTokens: accumulator.lastTurnCacheCreationTokens,
     compactionCount: accumulator.compactionCount,
     sessionAgeMinutes,
     lastActivityAgeMinutes,

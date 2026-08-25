@@ -74,7 +74,9 @@ describe('codex normalizeEntry', () => {
       inputTokens: 17882,
       outputTokens: 648,
       cacheReadTokens: 7680,
-      cacheCreationTokens: 0,
+      // null, not 0 — Codex has no cache-write analog, and a consumer must
+      // not read that absence as "compaction is free on this harness".
+      cacheCreationTokens: null,
     });
     assert.equal(normalized.detectedContextWindowTokens, 258400);
   });

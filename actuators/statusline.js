@@ -7,9 +7,11 @@
 // projects/2026-08-23-deterministic-cli-visibility/spec.md). Not
 // session-scoped — shows the latest logged decision across all warden
 // sessions, a known simplification until log entries carry cwd/session
-// identity to filter on.
+// identity to filter on. "Latest" resolves through latestLogFile(), not
+// LOG_FILE: decisions go to per-session files now, so reading the shared
+// log would freeze this line on the last entry written before that split.
 
-const { LOG_FILE, readLogLines } = require('./logStore');
+const { latestLogFile, readLogLines } = require('./logStore');
 const { nudgeMessageFor } = require('./messages');
 
 function formatStatusLine(logFilePath) {
@@ -30,7 +32,7 @@ function formatStatusLine(logFilePath) {
 
 function main() {
   try {
-    const line = formatStatusLine(LOG_FILE);
+    const line = formatStatusLine(latestLogFile());
     if (line) process.stdout.write(line + '\n');
   } catch {
     // a broken status line must never break the user's whole footer

@@ -40,7 +40,10 @@ function handleEventMsg(base, entry) {
     inputTokens: usage.input_tokens || 0,
     outputTokens: usage.output_tokens || 0,
     cacheReadTokens: usage.cached_input_tokens || 0,
-    cacheCreationTokens: 0, // Codex reports no cache-write analog
+    // Codex reports no cache-write analog. Explicitly unknown, not zero — a
+    // cost rule reading a real 0 here would price compaction as free on this
+    // harness. See core/resourceStateCore.js applyAssistantUsage.
+    cacheCreationTokens: null,
   };
   base.detectedContextWindowTokens = info.model_context_window || null;
   return base;
