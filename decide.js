@@ -49,14 +49,14 @@ function exceedsHandoffThreshold(state) {
   };
 }
 
-// CAVEAT (arXiv 2601.06007, "Don't Break the Cache: An Evaluation of
-// Prompt Caching for Long-Horizon Agentic Tasks"): compacting can
-// invalidate a cached prompt prefix, so COMPACT firing may *increase*
-// cost/latency under prompt caching even though token count drops.
-// Findings are scoped to research-agent tool-calling workloads, not
-// general coding-agent sessions — not yet enough evidence to change
-// THRESHOLDS or logic per AGENTS.md. Candidate for a real backtest
-// measuring cost/latency impact of COMPACT on cached sessions.
+// CAVEAT: compacting rewrites the prompt prefix, invalidating the cache, so
+// the next turn pays a full cache write — COMPACT can raise cost even as the
+// token count drops. Measured over 84 transcripts / 79 real compactions:
+// that costs ~1.4% of spend, too little to move THRESHOLDS on its own. The
+// unmodelled costs that do matter are latency (~153s median per compaction)
+// and firing early — the absolute floor below trips near 0.6x the context
+// where compaction actually happened (median ~168k). Changing it needs the
+// false-positive rate hardened first, per AGENTS.md.
 function exceedsCompactThreshold(state) {
   const overPct = state.contextUsedPct >= THRESHOLDS.compactContextPct;
   const overAbsolute = state.contextUsedTokens >= THRESHOLDS.compactContextTokens;
