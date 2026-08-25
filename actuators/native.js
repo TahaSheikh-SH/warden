@@ -78,8 +78,8 @@ function readStdin() {
 // narrower trigger than the old blanket HANDOFF/STOP block reverted after
 // ~97% override rate (commit 8787). WARDEN_DISABLE_STOP_BLOCK=1 reverts
 // just this path back to advisory.
-function respondFor(action, reasons) {
-  const message = nudgeMessageFor(action, reasons);
+function respondFor(action, reasons, state) {
+  const message = nudgeMessageFor(action, reasons, state);
   if (!message) return { exitCode: 0, output: null };
 
   if (action === ACTIONS.STOP && process.env.WARDEN_DISABLE_STOP_BLOCK !== '1') {
@@ -138,12 +138,12 @@ async function main() {
 
   const { exitCode, output, stderr } =
     effectiveDecision.action === ACTIONS.STOP
-      ? respondFor(effectiveDecision.action, effectiveDecision.reasons)
+      ? respondFor(effectiveDecision.action, effectiveDecision.reasons, state)
       : effectiveDecision.action !== ACTIONS.CONTINUE &&
           alreadyNudgedThisAction &&
           !notifyingHumanThisTurn
         ? { exitCode: 0, output: null, stderr: null }
-        : respondFor(effectiveDecision.action, effectiveDecision.reasons);
+        : respondFor(effectiveDecision.action, effectiveDecision.reasons, state);
 
   if (output) {
     process.stdout.write(JSON.stringify(output));

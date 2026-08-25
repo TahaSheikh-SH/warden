@@ -130,7 +130,7 @@ function WardenPiExtension(pi, { logFilePath, notifyOpts = {} } = {}) {
     logDecision(effectiveDecision, state, tracker.sessionKey, tracker.logFilePath);
     maybeNotifyHuman(effectiveDecision, tracker.sessionKey, tracker.logFilePath, notifyOpts);
 
-    const message = respondFor(effectiveDecision.action, effectiveDecision.reasons);
+    const message = respondFor(effectiveDecision.action, effectiveDecision.reasons, state);
     // Armed here for the NEXT tool call — turn_end fires after the turn
     // already completed, so the block goes through tool_call, not dedup.
     stopBlockMessage = effectiveDecision.action === ACTIONS.STOP ? message : null;

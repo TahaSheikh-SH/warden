@@ -160,7 +160,11 @@ async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindow
       // No turn-abort hook exists in the OpenCode SDK (anomalyco/opencode#16626,
       // unresolved) — but tool.execute.before can throw to reject a tool
       // call, so STOP uses that instead of relying on the toast alone.
-      pendingMessage = respondFor(effectiveDecision.action, effectiveDecision.reasons);
+      pendingMessage = respondFor(
+        effectiveDecision.action,
+        effectiveDecision.reasons,
+        result.state,
+      );
       stopBlockMessage = effectiveDecision.action === ACTIONS.STOP ? pendingMessage : null;
       await showToastForAction(client, effectiveDecision.action, pendingMessage);
     },

@@ -24,7 +24,8 @@ function formatStatusLine(logFilePath) {
   }
 
   if (!entry || !Array.isArray(entry.reasons)) return null;
-  return nudgeMessageFor(entry.action, entry.reasons);
+  // JSONL log doesn't carry full state, so cost clause is omitted here.
+  return nudgeMessageFor(entry.action, entry.reasons, null);
 }
 
 function main() {

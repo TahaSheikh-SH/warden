@@ -86,7 +86,7 @@ function contextWindowForModel(model) {
  * (still fine to yield through — the core reducer treats null as a no-op).
  */
 function normalizeEntry(entry) {
-  const usage = entry.message && entry.message.usage;
+  const { usage, model = null } = entry.message || {};
   return {
     type: entry.type || null,
     timestamp: entry.timestamp || null,
@@ -105,7 +105,9 @@ function normalizeEntry(entry) {
     gitBranch: entry.gitBranch || null,
     // First-wins in the core reducer, so a mid-session /model switch keeps the
     // first model's window — same as Codex's per-turn model_context_window.
-    detectedContextWindowTokens: contextWindowForModel(entry.message && entry.message.model),
+    detectedContextWindowTokens: contextWindowForModel(model),
+    // Also first-wins; the actuator layer prices compaction with it.
+    model,
   };
 }
 

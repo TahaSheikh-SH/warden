@@ -16,38 +16,7 @@ const readline = require('readline');
 const path = require('path');
 const { buildResourceState } = require('../resourceState');
 const { decide } = require('../decide');
-
-// $ / token (converted from official $/MTok table). Cache write assumed
-// 5-minute (1.25x base input) since that's the default breakpoint type;
-// cache read is 0.1x base input across all models.
-const PRICING = {
-  'claude-sonnet-5': {
-    input: 2 / 1e6,
-    output: 10 / 1e6,
-    cacheWrite: 2.5 / 1e6,
-    cacheRead: 0.2 / 1e6,
-  },
-  'claude-opus-5': {
-    input: 5 / 1e6,
-    output: 25 / 1e6,
-    cacheWrite: 6.25 / 1e6,
-    cacheRead: 0.5 / 1e6,
-  },
-  'claude-haiku-4-5-20251001': {
-    input: 1 / 1e6,
-    output: 5 / 1e6,
-    cacheWrite: 1.25 / 1e6,
-    cacheRead: 0.1 / 1e6,
-  },
-  // fallback for older/unlisted model strings seen in real transcripts
-  default: { input: 3 / 1e6, output: 15 / 1e6, cacheWrite: 3.75 / 1e6, cacheRead: 0.3 / 1e6 },
-};
-
-function priceFor(modelId) {
-  if (!modelId) return PRICING.default;
-  const key = Object.keys(PRICING).find((pricingKey) => modelId.includes(pricingKey));
-  return key ? PRICING[key] : PRICING.default;
-}
+const { priceFor } = require('../lib/pricing');
 
 function turnCost(usage, modelId) {
   const rates = priceFor(modelId);

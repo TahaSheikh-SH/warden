@@ -72,8 +72,8 @@ function computeEffectiveDecision(decision, sessionFilePath, logFilePath) {
 // Same advisory stance as native.js's respondFor for
 // COMPACT/CHECKPOINT/HANDOFF; STOP uses this harness's hard-stop lever
 // (continue:false/stopReason).
-function respondFor(action, reasons) {
-  const message = nudgeMessageFor(action, reasons);
+function respondFor(action, reasons, state) {
+  const message = nudgeMessageFor(action, reasons, state);
   if (!message) return null;
 
   if (action === ACTIONS.STOP) {
@@ -146,7 +146,7 @@ async function main() {
     alreadyNudgedThisAction &&
     !notifyingHumanThisTurn
       ? null
-      : respondFor(effectiveDecision.action, effectiveDecision.reasons);
+      : respondFor(effectiveDecision.action, effectiveDecision.reasons, state);
   if (output) {
     const { stderr, ...stdoutPayload } = output;
     process.stdout.write(JSON.stringify(stdoutPayload));

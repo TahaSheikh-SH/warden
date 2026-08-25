@@ -44,6 +44,7 @@ function computeGrowthProjection(recentTurnTokens, contextWindowTokens, contextU
 function initialAccumulator() {
   return {
     detectedContextWindowTokens: null,
+    model: null,
     sessionId: null,
     cwd: null,
     gitBranch: null,
@@ -68,6 +69,7 @@ function applyMetadata(accumulator, entry) {
   accumulator.gitBranch = accumulator.gitBranch || entry.gitBranch || null;
   accumulator.detectedContextWindowTokens =
     accumulator.detectedContextWindowTokens || entry.detectedContextWindowTokens || null;
+  accumulator.model = accumulator.model || entry.model || null;
 }
 
 function applyTimestamp(accumulator, entry) {
@@ -156,6 +158,7 @@ function finalizeAccumulator(accumulator, opts = {}) {
     sessionId: accumulator.sessionId,
     cwd: accumulator.cwd,
     gitBranch: accumulator.gitBranch,
+    model: accumulator.model,
     contextWindowTokens,
     contextUsedTokens,
     contextUsedPct,
