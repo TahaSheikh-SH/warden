@@ -4,7 +4,8 @@
 // to own both the Claude Code transcript parsing and the harness-agnostic
 // reduction. Those are now split: harnesses/claude-code/transcript.js does
 // the parsing/normalization, core/resourceStateCore.js does the reduction
-// (identically for every harness). See AGENTS.md "HarnessAdapter pattern".
+// (identically for every harness). See AGENTS.md "Keep harness-specific
+// behavior out of the shared core".
 
 const fs = require('fs');
 const os = require('os');
@@ -55,7 +56,7 @@ function writeAccumulatorCache(sessionFilePath, cache) {
 
 /**
  * Streams a Claude Code session .jsonl into a ResourceState snapshot,
- * reading real per-turn `usage` blocks (see README.md "Design notes").
+ * reading real per-turn `usage` blocks.
  * Incrementally folds onto the cache above, unless `opts.maxLines` is set
  * — a partial-replay backtest must not read/write the real cache since it
  * evaluates an out-of-order prefix.

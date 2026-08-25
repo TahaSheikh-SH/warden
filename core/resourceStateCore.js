@@ -3,7 +3,8 @@
 // Harness-agnostic reducer. Every harness adapter normalizes its own
 // transcript format into the shape below and hands entries here — this
 // file must never import anything harness-specific (no fs, no per-harness
-// field names). See AGENTS.md "HarnessAdapter pattern".
+// field names). See AGENTS.md "Keep harness-specific behavior out of the
+// shared core".
 //
 // NormalizedTranscriptEntry:
 //   {
