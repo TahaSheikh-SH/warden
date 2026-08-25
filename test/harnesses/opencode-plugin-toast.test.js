@@ -15,7 +15,7 @@ describe('WardenPlugin toast wiring', () => {
     );
     const toastCalls = [];
     const client = { tui: { showToast: async (toastOptions) => toastCalls.push(toastOptions) } };
-    const plugin = await WardenPlugin({ client }, { logFilePath });
+    const plugin = await WardenPlugin({ client }, { logFilePath, contextWindowTokens: 1000000 });
     await plugin.event({
       event: {
         type: 'message.updated',

@@ -13,7 +13,10 @@ describe('WardenPlugin', () => {
       os.tmpdir(),
       `warden-opencode-test-${process.hrtime.bigint()}.jsonl`,
     );
-    const plugin = await WardenPlugin({ directory: '/repo', worktree: '/repo' }, { logFilePath });
+    const plugin = await WardenPlugin(
+      { directory: '/repo', worktree: '/repo' },
+      { logFilePath, contextWindowTokens: 1000000 },
+    );
     assert.equal(typeof plugin.event, 'function');
     assert.equal(typeof plugin['experimental.chat.system.transform'], 'function');
     assert.equal(typeof plugin['tool.execute.before'], 'function');
@@ -24,7 +27,7 @@ describe('WardenPlugin', () => {
       os.tmpdir(),
       `warden-opencode-test-${process.hrtime.bigint()}.jsonl`,
     );
-    const plugin = await WardenPlugin({}, { logFilePath });
+    const plugin = await WardenPlugin({}, { logFilePath, contextWindowTokens: 1000000 });
     await assert.doesNotReject(() => plugin['tool.execute.before']());
   });
 
@@ -33,7 +36,7 @@ describe('WardenPlugin', () => {
       os.tmpdir(),
       `warden-opencode-test-${process.hrtime.bigint()}.jsonl`,
     );
-    const plugin = await WardenPlugin({}, { logFilePath });
+    const plugin = await WardenPlugin({}, { logFilePath, contextWindowTokens: 1000000 });
     await assert.doesNotReject(() =>
       plugin.event({
         event: {
@@ -55,7 +58,7 @@ describe('WardenPlugin', () => {
       os.tmpdir(),
       `warden-opencode-test-${process.hrtime.bigint()}.jsonl`,
     );
-    const plugin = await WardenPlugin({}, { logFilePath });
+    const plugin = await WardenPlugin({}, { logFilePath, contextWindowTokens: 1000000 });
     await plugin.event({
       event: {
         type: 'message.updated',
@@ -93,7 +96,10 @@ describe('WardenPlugin human notify wiring', () => {
         calls.push({ cmd: command, args: commandArgs });
         callback(null);
       };
-      const plugin = await WardenPlugin({}, { logFilePath, notifyOpts: { execFileFn } });
+      const plugin = await WardenPlugin(
+        {},
+        { logFilePath, contextWindowTokens: 1000000, notifyOpts: { execFileFn } },
+      );
       const sessionID = 'ses_notify';
 
       const handoffEvent = {
@@ -124,7 +130,7 @@ describe('WardenPlugin STOP escalation', () => {
       os.tmpdir(),
       `warden-opencode-test-escalate-${process.hrtime.bigint()}.jsonl`,
     );
-    const plugin = await WardenPlugin({}, { logFilePath });
+    const plugin = await WardenPlugin({}, { logFilePath, contextWindowTokens: 1000000 });
     const sessionID = 'ses_escalate';
 
     const handoffEvent = {
@@ -163,7 +169,7 @@ describe('WardenPlugin STOP escalation', () => {
       os.tmpdir(),
       `warden-opencode-test-null-session-${process.hrtime.bigint()}.jsonl`,
     );
-    const plugin = await WardenPlugin({}, { logFilePath });
+    const plugin = await WardenPlugin({}, { logFilePath, contextWindowTokens: 1000000 });
 
     await plugin.event({
       event: {
@@ -193,7 +199,7 @@ describe('WardenPlugin STOP escalation', () => {
       os.tmpdir(),
       `warden-opencode-test-per-message-${process.hrtime.bigint()}.jsonl`,
     );
-    const plugin = await WardenPlugin({}, { logFilePath });
+    const plugin = await WardenPlugin({}, { logFilePath, contextWindowTokens: 1000000 });
     const sessionID = 'ses_streaming';
     const messageId = 'msg_1';
 

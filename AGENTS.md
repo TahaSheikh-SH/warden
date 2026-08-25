@@ -30,9 +30,11 @@ harness-specific behavior to the core to accommodate one harness. A new
 harness should add an adapter rather than modify the shared core.
 
 ## Read context limits from the harness/model
-Use the actual context window when available. Treat the configured
-default as a last-resort fallback, not a value to keep manually
-synchronized.
+Use the actual context window from the harness or model. Do not
+reintroduce an assumed default: a window guessed too large is silent,
+since `isContextUsageTrustworthy` can only catch one that's too small.
+When nothing resolves, report the window as unknown and let percentage
+rules stand down; the absolute-token floors still apply.
 
 ## Avoid new runtime dependencies
 Prefer the existing lightweight runtime and test/tooling stack. Add a

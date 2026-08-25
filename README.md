@@ -37,8 +37,9 @@ node cli.js <session.jsonl>
 node cli.js --context-window <tokens> [session.jsonl]
 ```
 
-Use `--context-window` if your model isn't the 1M-token default (e.g.
-Sonnet 4.5, Haiku 4.5) — otherwise thresholds fire too late.
+Warden reads the real context window from your harness or model. Use
+`--context-window` when it can't be determined — without it, percentage
+thresholds are skipped and only the absolute-token floors apply.
 
 To have warden act on its own recommendation (not just print it), install
 `actuators/native.js` as a hook — `npm run setup` does this for you, or see
@@ -114,8 +115,9 @@ there.
 | `checkpointSessionAgeMinutes`, `activeSessionMaxIdleMinutes` | 240m, 30m | Tested — long sessions accrue risk beyond token count |
 
 Both pct and absolute-token floors exist since a percentage means different
-things on a 200k vs. 1M window — whichever trips first wins. Threshold
-changes need a backtest (`scripts/backtest.js`) or a cited source — see
+things on a 200k vs. 1M window — whichever trips first wins. The absolute
+floors are also the only rules that still work when the window is unknown.
+Threshold changes need a backtest (`scripts/backtest.js`) or a cited source — see
 AGENTS.md.
 
 ## Layout
@@ -130,8 +132,11 @@ See `AGENTS.md` for design invariants and rationale.
 
 ## Known limitations
 
-- Context window can't be auto-detected for Claude Code — set
-  `WARDEN_CONTEXT_WINDOW` for non-default models.
+- Warden never assumes a context window. Claude Code transcripts don't
+  report one, so it's inferred from `message.model` against a table in the
+  harness adapter; Codex, OpenCode, and Pi read theirs from the harness. When
+  none resolves, warden reports `UNKNOWN` rather than guessing — set
+  `WARDEN_CONTEXT_WINDOW` to get percentage-based recommendations back.
 - `STOP` fires after `HANDOFF` is ignored `GRACE_TURN_LIMIT` (5) turns in a
   row, and stays escalated for the rest of the session. Claude Code/Codex
   can hard-block the turn; Pi/OpenCode can only notify harder.

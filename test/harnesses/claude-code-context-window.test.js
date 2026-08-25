@@ -117,4 +117,13 @@ describe('claude-code window detection reaches decide()', () => {
 
     assert.equal(state.contextWindowTokens, 500000);
   });
+  test('an unknown model leaves the window unresolved rather than assuming one', async () => {
+    async function* entries() {
+      yield normalizeEntry(assistantLine('<synthetic>', 1000));
+    }
+
+    const state = await reduceTranscriptEntries(entries());
+
+    assert.equal(state.contextWindowTokens, null);
+  });
 });

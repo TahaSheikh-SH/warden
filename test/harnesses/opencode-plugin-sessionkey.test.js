@@ -13,7 +13,7 @@ describe('opencode WardenPlugin fallback sessionKey', () => {
       os.tmpdir(),
       `warden-opencode-test-pid-${process.hrtime.bigint()}.jsonl`,
     );
-    const plugin = await WardenPlugin({}, { logFilePath });
+    const plugin = await WardenPlugin({}, { logFilePath, contextWindowTokens: 1000000 });
 
     await plugin.event({
       event: {

@@ -16,15 +16,10 @@
 //     sessionId, cwd, gitBranch: string | null (optional, first-wins)
 //     detectedContextWindowTokens: number | null (optional, first-wins —
 //       some harnesses report their real window size in-transcript, e.g.
-//       Codex's per-turn model_context_window; takes priority over
-//       DEFAULT_CONTEXT_WINDOW_TOKENS when the caller doesn't override)
+//       Codex's per-turn model_context_window; used when the caller doesn't
+//       override)
 //   }
 
-// 1M is the default, no-beta-header context window for Sonnet 5, Opus 5+,
-// and Sonnet/Opus 4.6+ — the models most sessions run on now. Anyone still
-// pinned to a 200k model (Sonnet 4.5, Haiku 4.5, older) sets
-// WARDEN_CONTEXT_WINDOW to override. See AGENTS.md "Context window".
-const DEFAULT_CONTEXT_WINDOW_TOKENS = 1000000;
 const GROWTH_WINDOW_TURNS = 5;
 
 // Shared by both the transcript reducer below and harnesses/pi/extension.js
@@ -124,12 +119,19 @@ function foldEntry(accumulator, entry) {
   return accumulator;
 }
 
+// Percentage rules need a real window. >1 means the window is too small;
+// null means no harness knew it. Both make contextUsedPct meaningless.
+function isContextUsageTrustworthy(state) {
+  return state.contextWindowTokens > 0 && state.contextUsedPct <= 1;
+}
+
 // Pure aside from Date.now() for lastActivityAgeMinutes.
 function finalizeAccumulator(accumulator, opts = {}) {
+  // null, not an assumed default: guessing a window is Anthropic-specific
+  // knowledge the core shouldn't hold, and guessing too large silently
+  // disables every percentage rule. Callers gate on the predicate below.
   const contextWindowTokens =
-    opts.contextWindowTokens ||
-    accumulator.detectedContextWindowTokens ||
-    DEFAULT_CONTEXT_WINDOW_TOKENS;
+    opts.contextWindowTokens || accumulator.detectedContextWindowTokens || null;
 
   const contextUsedTokens = accumulator.lastTurnContextTokens;
   const contextUsedPct = contextWindowTokens > 0 ? contextUsedTokens / contextWindowTokens : 0;
@@ -190,6 +192,6 @@ module.exports = {
   finalizeAccumulator,
   initialAccumulator,
   computeGrowthProjection,
-  DEFAULT_CONTEXT_WINDOW_TOKENS,
+  isContextUsageTrustworthy,
   GROWTH_WINDOW_TURNS,
 };

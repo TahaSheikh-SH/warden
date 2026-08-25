@@ -11,7 +11,7 @@
 const fs = require('fs');
 const {
   reduceTranscriptEntries,
-  DEFAULT_CONTEXT_WINDOW_TOKENS,
+  isContextUsageTrustworthy,
 } = require('../../core/resourceStateCore');
 const { streamNormalizedEntries } = require('./transcript');
 const { decide, ACTIONS } = require('../../decide');
@@ -99,8 +99,8 @@ async function evaluateCodexSession(sessionFilePath, { contextWindowTokens, maxL
     ...(await reduceTranscriptEntries(entries, { contextWindowTokens })),
     sessionFilePath,
   };
-  if (state.contextUsedPct > 1) {
-    // untrustworthy window size — refuse to act, same as native.js/cli.js
+  // Unknown or too-small window — refuse to act, same as native.js/cli.js.
+  if (!isContextUsageTrustworthy(state)) {
     return { state, decision: null };
   }
   return { state, decision: decide(state) };
@@ -167,5 +167,4 @@ module.exports = {
   respondFor,
   computeEffectiveDecision,
   logDecisionAndNotify,
-  DEFAULT_CONTEXT_WINDOW_TOKENS,
 };

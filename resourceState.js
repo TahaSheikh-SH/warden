@@ -13,7 +13,7 @@ const {
   foldEntry,
   finalizeAccumulator,
   initialAccumulator,
-  DEFAULT_CONTEXT_WINDOW_TOKENS,
+  isContextUsageTrustworthy,
 } = require('./core/resourceStateCore');
 const {
   validateTranscriptEntry,
@@ -61,7 +61,6 @@ function writeAccumulatorCache(sessionFilePath, cache) {
  * evaluates an out-of-order prefix.
  */
 async function buildResourceState(sessionFilePath, opts = {}) {
-  const contextWindowTokens = opts.contextWindowTokens || DEFAULT_CONTEXT_WINDOW_TOKENS;
   const useCache = !opts.maxLines;
   const cached = useCache ? readAccumulatorCache(sessionFilePath) : null;
   const accumulator = cached ? cached.accumulator : initialAccumulator();
@@ -84,21 +83,28 @@ async function buildResourceState(sessionFilePath, opts = {}) {
     });
   }
 
-  const state = finalizeAccumulator(accumulator, { contextWindowTokens });
-  return { ...state, sessionFilePath };
-}
+  // Pass the override through unset: pre-resolving a default here made
+  // opts.contextWindowTokens always truthy in finalizeAccumulator, so the
+  // window detected from message.model was never consulted.
+  const state = finalizeAccumulator(accumulator, {
+    contextWindowTokens: opts.contextWindowTokens,
+  });
 
-// Over 100% means the assumed context window is wrong, not that the
-// session overflowed.
-function isContextPctTrustworthy(state) {
-  return state.contextUsedPct <= 1;
+  // Logged so an 'unknown' window is visible rather than silent.
+  const contextWindowSource = opts.contextWindowTokens
+    ? 'override'
+    : accumulator.detectedContextWindowTokens
+      ? 'detected'
+      : 'unknown';
+
+  return { ...state, sessionFilePath, contextWindowSource };
 }
 
 // Returns null decision when usage can't be trusted — caller decides how
 // to surface that (printed UNKNOWN line vs. fail-open hook exit).
 async function evaluateSession(sessionFilePath, { contextWindowTokens } = {}) {
   const state = await buildResourceState(sessionFilePath, { contextWindowTokens });
-  if (!isContextPctTrustworthy(state)) {
+  if (!isContextUsageTrustworthy(state)) {
     return { state, decision: null };
   }
   return { state, decision: decide(state) };
@@ -107,7 +113,6 @@ async function evaluateSession(sessionFilePath, { contextWindowTokens } = {}) {
 module.exports = {
   buildResourceState,
   evaluateSession,
-  isContextPctTrustworthy,
+  isContextUsageTrustworthy,
   validateTranscriptEntry,
-  DEFAULT_CONTEXT_WINDOW_TOKENS,
 };

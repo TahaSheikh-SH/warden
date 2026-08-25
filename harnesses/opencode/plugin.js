@@ -11,7 +11,10 @@
 // string[]` appends to the next turn's system prompt — this harness's
 // equivalent of Claude Code's hookSpecificOutput.additionalContext.
 
-const { reduceTranscriptEntries } = require('../../core/resourceStateCore');
+const {
+  reduceTranscriptEntries,
+  isContextUsageTrustworthy,
+} = require('../../core/resourceStateCore');
 const { normalizeEvent } = require('./transcript');
 const { decide, ACTIONS } = require('../../decide');
 const {
@@ -56,7 +59,7 @@ function createContextWindowResolver(client) {
       const model = provider && provider.models && provider.models[modelID];
       contextWindowTokens = (model && model.limit && model.limit.context) || null;
     } catch {
-      // client unavailable (e.g. in tests) — fall through to default
+      // client unavailable (e.g. in tests) — window stays unknown
     }
 
     cache.set(key, contextWindowTokens);
@@ -70,8 +73,8 @@ function createSessionEvaluator({ contextWindowTokens, client, logFilePath } = {
   const entries = [];
   const resolveContextWindowTokens = createContextWindowResolver(client);
   // Sticky across events — a compaction event carries no providerID/modelID,
-  // so this holds the last resolved value instead of falling back to the
-  // shared default whenever the latest event isn't a message.
+  // so this holds the last resolved value instead of losing the window
+  // whenever the latest event isn't a message.
   let lastKnownContextWindowTokens = null;
 
   return {
@@ -92,8 +95,8 @@ function createSessionEvaluator({ contextWindowTokens, client, logFilePath } = {
       const state = await reduceTranscriptEntries(entries, {
         contextWindowTokens: contextWindowTokens || lastKnownContextWindowTokens,
       });
-      // untrustworthy window size — refuse to act, same as native.js/cli.js
-      if (state.contextUsedPct > 1) return { state, decision: null };
+      // Unknown or too-small window — refuse to act, same as native.js/cli.js.
+      if (!isContextUsageTrustworthy(state)) return { state, decision: null };
       const decision = decide(state);
       return { state, decision };
     },
@@ -115,9 +118,9 @@ async function showToastForAction(client, action, message) {
   }
 }
 
-async function WardenPlugin(input, { logFilePath, notifyOpts = {} } = {}) {
+async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindowTokens } = {}) {
   const client = input && input.client;
-  const evaluator = createSessionEvaluator({ client, logFilePath });
+  const evaluator = createSessionEvaluator({ client, logFilePath, contextWindowTokens });
   // Handed off between the `event` and `experimental.chat.system.transform`
   // hooks, which fire separately; cleared once delivered.
   let pendingMessage = null;

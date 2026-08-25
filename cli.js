@@ -36,20 +36,23 @@ async function main() {
   console.log(`session       ${state.sessionId}`);
   console.log(`cwd           ${state.cwd}`);
   console.log(`branch        ${state.gitBranch}`);
-  console.log(
-    `context       ${state.contextUsedTokens.toLocaleString()} / ${state.contextWindowTokens.toLocaleString()} tokens (${(state.contextUsedPct * 100).toFixed(1)}%)`,
-  );
+  const window = state.contextWindowTokens
+    ? `${state.contextWindowTokens.toLocaleString()} tokens (${(state.contextUsedPct * 100).toFixed(1)}%)`
+    : 'unknown window';
+  console.log(`context       ${state.contextUsedTokens.toLocaleString()} / ${window}`);
   console.log(`compactions   ${state.compactionCount}`);
   console.log(`session age   ${state.sessionAgeMinutes.toFixed(0)}m`);
   console.log(`messages      ${state.messageCount}`);
   console.log('');
 
   if (!decision) {
+    const why = state.contextWindowTokens
+      ? `context used (${state.contextUsedTokens.toLocaleString()} tokens) exceeds the assumed ` +
+        `${state.contextWindowTokens.toLocaleString()}-token window`
+      : `no context window could be determined for this model`;
     console.log(
-      `recommendation: UNKNOWN — context used (${state.contextUsedTokens.toLocaleString()} tokens) ` +
-        `exceeds the assumed ${state.contextWindowTokens.toLocaleString()}-token window. This model/session ` +
-        `likely has a larger real window (e.g. Sonnet 1M) than the default. Re-run with ` +
-        `--context-window <real size> to get a trustworthy recommendation.`,
+      `recommendation: UNKNOWN — ${why}. Re-run with --context-window <real size> ` +
+        `to get a trustworthy recommendation.`,
     );
     return;
   }

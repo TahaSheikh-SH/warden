@@ -7,7 +7,7 @@ const { ACTIONS } = require('../../decide');
 
 describe('opencode createSessionEvaluator', () => {
   test('accumulates events across ingest calls and decides CONTINUE when usage is low', async () => {
-    const evaluator = createSessionEvaluator();
+    const evaluator = createSessionEvaluator({ contextWindowTokens: 1000000 });
     const result = await evaluator.ingest({
       type: 'message.updated',
       properties: {

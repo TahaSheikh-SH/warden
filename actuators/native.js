@@ -33,6 +33,7 @@ function logDecision(decision, state, sessionFilePath, logFilePath) {
       action: decision.action,
       reasons: decision.reasons,
       contextUsedPct: state.contextUsedPct,
+      contextWindowSource: state.contextWindowSource,
       compactionCount: state.compactionCount,
       sessionAgeMinutes: state.sessionAgeMinutes,
     },
