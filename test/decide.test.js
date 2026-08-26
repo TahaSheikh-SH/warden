@@ -127,27 +127,23 @@ describe('COMPACT', () => {
 });
 
 describe('CHECKPOINT', () => {
-  test('repeated compaction tripwire fires when compaction count and context both cross thresholds', () => {
+  // Task 6: the decay backtest (reference/compaction-backtest.md) found no N
+  // at which repeated compaction measurably degrades a session — the
+  // checkpointContextPct gate this rule used to require is gone. The rule now
+  // fires on compactionCount alone, justified by measured cost (~55k
+  // token-equivalents of cache re-write per compaction), not decay.
+  test('repeated compaction tripwire fires on compaction count alone, even at low contextUsedPct', () => {
     const state = givenResourceState({
-      contextUsedPct: THRESHOLDS.checkpointContextPct,
+      contextUsedPct: 0.1,
       compactionCount: THRESHOLDS.checkpointCompactionCount,
     });
     const decision = decide(state);
     assert.equal(decision.action, ACTIONS.CHECKPOINT);
   });
 
-  test('repeated compaction tripwire does not fire below checkpointContextPct', () => {
-    const state = givenResourceState({
-      contextUsedPct: THRESHOLDS.checkpointContextPct - 0.001,
-      compactionCount: THRESHOLDS.checkpointCompactionCount,
-    });
-    const decision = decide(state);
-    assert.notEqual(decision.action, ACTIONS.CHECKPOINT);
-  });
-
   test('repeated compaction tripwire does not fire below compaction count', () => {
     const state = givenResourceState({
-      contextUsedPct: THRESHOLDS.checkpointContextPct,
+      contextUsedPct: 0.1,
       compactionCount: THRESHOLDS.checkpointCompactionCount - 1,
     });
     const decision = decide(state);
@@ -199,7 +195,6 @@ describe('THRESHOLDS regression — every value must match its citation', () => 
     assert.deepEqual(THRESHOLDS, {
       handoffContextPct: 0.92,
       compactContextPct: 0.7,
-      checkpointContextPct: 0.6,
       compactContextTokens: 100000,
       checkpointCompactionCount: 2,
       checkpointSessionAgeMinutes: 240,

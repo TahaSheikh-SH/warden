@@ -121,8 +121,7 @@ there.
 | Threshold | Value | Source |
 |---|---|---|
 | `compactContextTokens` | 100,000 | Anthropic's `clear_tool_uses_20250919` default `trigger` (vendor, primary) — corroborated by the [Gemini 2.5 technical report](https://arxiv.org/abs/2507.06261) (agents favor repeating past actions over new plans beyond ~100k tokens) and [LOCA-bench](https://arxiv.org/abs/2602.07962) (Claude-4.5-Opus accuracy 45.3 @ 96K, 34.0 @ 128K vs. 96.0 @ 8K). [Context Rot](https://trychroma.com/research/context-rot) (Chroma) supports only the general claim — long context degrades quality, non-uniformly — not this specific number. |
-| `checkpointCompactionCount` | 2 | [Codex #14589](https://github.com/openai/codex/issues/14589) — repeated compaction degrades accuracy |
-| `checkpointContextPct` | 60% | [Session lifecycle management](https://zylos.ai/research/2026-03-31-context-window-management-session-lifecycle-long-running-agents/) (Zylos) — engineering guidance, not a measurement; early warning band |
+| `checkpointCompactionCount` | 2 | Re-derived from a local backtest (n=86 epochs, 21 sessions): the original decay premise ([Codex #14589](https://github.com/openai/codex/issues/14589)) did not hold on any of 4 measures, but every compaction costs ~43-46k tokens of cache re-write (~55k token-equivalents), which is real regardless of decay — the rule now fires on count alone, no pct gate |
 | `compactContextPct` | 70% | [Context Rot in AI Agents](https://www.mindstudio.ai/blog/context-rot-ai-agents-auto-compact-fix) (MindStudio) — engineering guidance, not peer-reviewed; degradation zone starts ~70-80% context capacity, recommends compacting at 0.7 to fire before it |
 | `handoffContextPct` | 92% | Tested — final safety margin |
 | `burnRateMinTurnsUntilOverflow`, `minPctForBurnRateTrigger` | 3 turns, 50% | Tested — catches fast-growing sessions before the static % threshold would |

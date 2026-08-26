@@ -14,13 +14,8 @@ const THRESHOLDS = {
   // 2026) — "degradation zone starting around 70-80% context capacity" for
   // long-range reasoning coherence; recommends triggering auto-compact at 0.7
   // to fire before that zone. Blog-grade, not peer-reviewed or vendor —
-  // engineering guidance, like the Zylos citation below, not a measurement.
+  // engineering guidance, not a measurement.
   compactContextPct: 0.7,
-  checkpointContextPct: 0.6,
-  // 60% band is Zylos Research session-lifecycle engineering guidance
-  // (zylos.ai/research/2026-03-31-context-window-management-session-lifecycle-long-running-agents/),
-  // not a peer-reviewed or vendor measurement — adequate for a pct band,
-  // not load-bearing on its own for a blocking action.
   //
   // compactContextTokens: Anthropic's own clear_tool_uses_20250919 default
   // `trigger` is 100,000 input tokens (vendor, primary — see
@@ -106,19 +101,26 @@ function isBurstingBurnRate(state) {
   };
 }
 
+// Task 6 / reference/compaction-backtest.md: the original premise — repeated
+// compaction degrades a session — was tested against 86 real epochs across 21
+// sessions and did not hold on any of four measures (H1-H3, cross-boundary
+// re-reads). There is no N at which a fresh session measurably beats another
+// compaction. The rule is kept and re-derived on a different, measured basis:
+// every compaction costs ~43-46k tokens of cache re-write (n = 86), ~55k
+// token-equivalents at the 5-minute cache-write multiplier of 1.25x, paid
+// before any new work happens. That cost is real regardless of decay, so the
+// rule fires on compactionCount alone — no pct corroboration required.
 function isRepeatedCompactionDegrading(state) {
   const compactedEnoughTimes = state.compactionCount >= THRESHOLDS.checkpointCompactionCount;
-  const backUpToCheckpointPct = state.contextUsedPct >= THRESHOLDS.checkpointContextPct;
-  if (!compactedEnoughTimes || !backUpToCheckpointPct) return null;
+  if (!compactedEnoughTimes) return null;
   return {
     action: ACTIONS.CHECKPOINT,
     reason:
-      `${state.compactionCount} compactions already happened and context is ` +
-      `back up to ${(state.contextUsedPct * 100).toFixed(1)}% — repeated ` +
-      `compaction is degrading, not fixing, this session (Codex itself warns ` +
-      `multiple compactions reduce accuracy — github.com/openai/codex#14589; ` +
-      `${(THRESHOLDS.checkpointContextPct * 100).toFixed(0)}% checkpoint band ` +
-      `per Zylos Research, 2026 engineering guidance, not a measurement)`,
+      `${state.compactionCount} compactions already happened, each costing ` +
+      `~55k token-equivalents of cache re-write (measured, ` +
+      `reference/compaction-backtest.md, n=86) — that cost, not session ` +
+      `decay, is why repeated compaction stops paying for itself here ` +
+      `(the decay hypothesis itself failed backtest against 86 real epochs)`,
   };
 }
 
