@@ -56,11 +56,14 @@ async function loadEntries(logFile) {
   return entries;
 }
 
-// Did a compact_boundary system entry appear in the transcript strictly
-// after `sinceTimestamp`?
-function transcriptCompactedAfter(sessionKey, sinceTimestamp) {
-  if (!sessionKey || !fs.existsSync(sessionKey)) return false;
+// compact_boundary system entries in the transcript strictly after
+// `sinceTimestamp`, with the trigger Claude Code reports (compactMetadata is
+// Claude-Code-only — see AGENTS.md "Keep harness-specific behavior out of the
+// shared core"; other harnesses' boundaries come back with trigger: null).
+function compactionsAfter(sessionKey, sinceTimestamp) {
+  if (!sessionKey || !fs.existsSync(sessionKey)) return [];
   const lines = fs.readFileSync(sessionKey, 'utf8').split('\n');
+  const compactions = [];
   for (const line of lines) {
     if (!line.trim()) continue;
     let entry;
@@ -75,50 +78,107 @@ function transcriptCompactedAfter(sessionKey, sinceTimestamp) {
       entry.timestamp &&
       entry.timestamp > sinceTimestamp
     ) {
-      return true;
+      compactions.push({
+        timestamp: entry.timestamp,
+        trigger: entry.compactMetadata?.trigger ?? null,
+      });
     }
   }
-  return false;
+  return compactions;
 }
 
-function rollup(entries) {
+function transcriptCompactedAfter(sessionKey, sinceTimestamp) {
+  return compactionsAfter(sessionKey, sinceTimestamp).length > 0;
+}
+
+function tallyByAction(entries) {
   const byAction = {};
   for (const entry of entries) {
     byAction[entry.action] = byAction[entry.action] || { count: 0, sumContextPct: 0 };
     byAction[entry.action].count += 1;
     byAction[entry.action].sumContextPct += entry.contextUsedPct || 0;
   }
+  return byAction;
+}
 
-  // Follow-through: for each COMPACT/CHECKPOINT nudge, did the same
-  // transcript show a compact_boundary after that timestamp?
+// Follow-through: for each COMPACT/CHECKPOINT nudge, did the same transcript
+// show a compact_boundary after that timestamp? Only a 'manual' trigger is
+// warden's win — 'auto' means the harness compacted on its own (possibly
+// unrelated to the nudge), and counting it inflates the headline metric.
+// compactMetadata.trigger is Claude-Code-only (see plan.md Task 9): a
+// harness that never sets it lands in the unknown-trigger bucket, tallied
+// but not claimed as follow-through.
+function classifyNudges(entries, nudges) {
+  const nudgesByHarness = {};
+  let nudgesFollowedManual = 0;
+  let nudgesFollowedAuto = 0;
+  let nudgesFollowedUnknownTrigger = 0;
+  for (const nudge of nudges) {
+    const harnessLabel = nudge.harness || 'claude-code';
+    nudgesByHarness[harnessLabel] = (nudgesByHarness[harnessLabel] || 0) + 1;
+    const sessionKey = nudge.sessionKey ?? nudge.transcriptPath;
+    const compactions = compactionsAfter(sessionKey, nudge.timestamp);
+    if (!compactions.length) continue;
+    if (compactions.some((c) => c.trigger === 'manual')) {
+      nudgesFollowedManual += 1;
+    } else if (compactions.some((c) => c.trigger === 'auto')) {
+      nudgesFollowedAuto += 1;
+    } else {
+      nudgesFollowedUnknownTrigger += 1;
+    }
+  }
+  return {
+    nudgesByHarness,
+    nudgesFollowedManual,
+    nudgesFollowedAuto,
+    nudgesFollowedUnknownTrigger,
+  };
+}
+
+// Override: for a HANDOFF/STOP block, did a later log entry exist for the
+// same transcript that wasn't just the harness resetting state via its own
+// compaction? A CONTINUE that only appears after a compact_boundary reflects
+// the compaction's reset, not the user overriding the block.
+function isOverridden(entries, block) {
+  const blockSessionKey = block.sessionKey ?? block.transcriptPath;
+  const laterEntries = entries.filter(
+    (entry) =>
+      (entry.sessionKey ?? entry.transcriptPath) === blockSessionKey &&
+      entry.timestamp > block.timestamp,
+  );
+  if (!laterEntries.length) return false;
+  const compactionTimestamps = compactionsAfter(blockSessionKey, block.timestamp)
+    .map((c) => c.timestamp)
+    .sort();
+  const firstCompactionTimestamp = compactionTimestamps[0] ?? null;
+  return laterEntries.some(
+    (entry) => !firstCompactionTimestamp || entry.timestamp < firstCompactionTimestamp,
+  );
+}
+
+function rollup(entries) {
+  const byAction = tallyByAction(entries);
+
   const nudges = entries.filter(
     (entry) => entry.action === 'COMPACT' || entry.action === 'CHECKPOINT',
   );
-  let nudgesFollowed = 0;
-  for (const nudge of nudges) {
-    const sessionKey = nudge.sessionKey ?? nudge.transcriptPath;
-    if (transcriptCompactedAfter(sessionKey, nudge.timestamp)) nudgesFollowed += 1;
-  }
+  const {
+    nudgesByHarness,
+    nudgesFollowedManual,
+    nudgesFollowedAuto,
+    nudgesFollowedUnknownTrigger,
+  } = classifyNudges(entries, nudges);
 
-  // Override: for each HANDOFF/STOP block, did a later log entry exist
-  // for the same transcript (i.e. the user kept going instead of starting
-  // fresh)?
   const blocks = entries.filter((entry) => entry.action === 'HANDOFF' || entry.action === 'STOP');
-  let blocksOverridden = 0;
-  for (const block of blocks) {
-    const blockSessionKey = block.sessionKey ?? block.transcriptPath;
-    const continuedSameTranscript = entries.some(
-      (entry) =>
-        (entry.sessionKey ?? entry.transcriptPath) === blockSessionKey &&
-        entry.timestamp > block.timestamp,
-    );
-    if (continuedSameTranscript) blocksOverridden += 1;
-  }
+  const blocksOverridden = blocks.filter((block) => isOverridden(entries, block)).length;
 
   return {
     byAction,
     nudges: nudges.length,
-    nudgesFollowed,
+    nudgesByHarness,
+    nudgesFollowedManual,
+    nudgesFollowedAuto,
+    nudgesFollowedUnknownTrigger,
     blocks: blocks.length,
     blocksOverridden,
   };
@@ -135,7 +195,16 @@ async function main() {
     console.log('log file is empty — nothing to roll up');
     return;
   }
-  const { byAction, nudges, nudgesFollowed, blocks, blocksOverridden } = rollup(entries);
+  const {
+    byAction,
+    nudges,
+    nudgesByHarness,
+    nudgesFollowedManual,
+    nudgesFollowedAuto,
+    nudgesFollowedUnknownTrigger,
+    blocks,
+    blocksOverridden,
+  } = rollup(entries);
 
   console.log(`${entries.length} logged decisions\n`);
   console.log('by action:');
@@ -144,13 +213,39 @@ async function main() {
     console.log(`  ${action}: ${count} (avg context ${avgPct}%)`);
   }
   console.log('');
+
+  // compactMetadata.trigger is Claude-Code-only (Gate B, plan.md Task 9): a
+  // headline follow-through number computed only from those sessions and
+  // read as warden's overall rate would be the same inflated-metric error
+  // this rollup exists to fix, so every count below is labelled by harness.
+  const claudeCodeNudges = nudgesByHarness['claude-code'] || 0;
+  const otherHarnessNudges = nudges - claudeCodeNudges;
   console.log(
-    `nudge follow-through (COMPACT/CHECKPOINT): ${nudgesFollowed}/${nudges}` +
-      (nudges ? ` (${((nudgesFollowed / nudges) * 100).toFixed(0)}%)` : ''),
+    `nudges (COMPACT/CHECKPOINT): ${nudges} — claude-code: ${claudeCodeNudges}, other harnesses: ${otherHarnessNudges}`,
   );
+  if (claudeCodeNudges) {
+    console.log(
+      `  manual follow-through (claude-code only): ${nudgesFollowedManual}/${claudeCodeNudges}` +
+        ` (${((nudgesFollowedManual / claudeCodeNudges) * 100).toFixed(0)}%)`,
+    );
+    console.log(
+      `  harness auto-compacted instead (not a warden win): ${nudgesFollowedAuto}/${claudeCodeNudges}`,
+    );
+  }
+  if (otherHarnessNudges) {
+    console.log(
+      `  follow-through, trigger unreported by harness: ${nudgesFollowedUnknownTrigger}/${otherHarnessNudges}` +
+        ' (cannot split manual vs auto on this harness)',
+    );
+  }
   console.log(
-    `block override rate (HANDOFF/STOP): ${blocksOverridden}/${blocks}` +
+    `block override rate (HANDOFF/STOP), excluding compaction-driven resets: ${blocksOverridden}/${blocks}` +
       (blocks ? ` (${((blocksOverridden / blocks) * 100).toFixed(0)}%)` : ''),
+  );
+  console.log('');
+  console.log(
+    'caveat: cross-run token variance up to 30x on identical tasks (Bai et al.) —' +
+      ' treat any single-run before/after delta as noise; repeated runs or a large N are needed for a real comparison.',
   );
 }
 
@@ -161,4 +256,10 @@ if (require.main === module) {
   });
 }
 
-module.exports = { loadEntries, transcriptCompactedAfter, rollup, resolveLogFiles };
+module.exports = {
+  loadEntries,
+  transcriptCompactedAfter,
+  compactionsAfter,
+  rollup,
+  resolveLogFiles,
+};

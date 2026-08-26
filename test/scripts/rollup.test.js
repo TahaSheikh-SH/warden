@@ -5,7 +5,12 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { loadEntries, transcriptCompactedAfter, rollup } = require('../../scripts/rollup');
+const {
+  loadEntries,
+  transcriptCompactedAfter,
+  compactionsAfter,
+  rollup,
+} = require('../../scripts/rollup');
 
 describe('loadEntries', () => {
   test('parses JSONL, skipping blank and malformed trailing lines', async () => {
@@ -96,5 +101,167 @@ describe('rollup', () => {
       { action: 'CONTINUE', transcriptPath: 't1', timestamp: '2026-01-01T00:05:00Z' },
     ]);
     assert.equal(blocksOverridden, 1);
+  });
+});
+
+describe('rollup: block override vs. compaction reset', () => {
+  test('does not count a block as overridden when continuation only follows a compaction reset', () => {
+    const filePath = path.join(
+      os.tmpdir(),
+      `warden-rollup-block-compact-${process.hrtime.bigint()}.jsonl`,
+    );
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({
+        type: 'system',
+        subtype: 'compact_boundary',
+        timestamp: '2026-01-01T00:03:00Z',
+        compactMetadata: { trigger: 'auto' },
+      }) + '\n',
+    );
+    const { blocksOverridden } = rollup([
+      { action: 'HANDOFF', sessionKey: filePath, timestamp: '2026-01-01T00:00:00Z' },
+      { action: 'CONTINUE', sessionKey: filePath, timestamp: '2026-01-01T00:05:00Z' },
+    ]);
+    assert.equal(blocksOverridden, 0);
+  });
+
+  test('still counts a block as overridden when continuation precedes any compaction', () => {
+    const filePath = path.join(
+      os.tmpdir(),
+      `warden-rollup-block-precedes-${process.hrtime.bigint()}.jsonl`,
+    );
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({
+        type: 'system',
+        subtype: 'compact_boundary',
+        timestamp: '2026-01-01T00:10:00Z',
+        compactMetadata: { trigger: 'auto' },
+      }) + '\n',
+    );
+    const { blocksOverridden } = rollup([
+      { action: 'HANDOFF', sessionKey: filePath, timestamp: '2026-01-01T00:00:00Z' },
+      { action: 'CONTINUE', sessionKey: filePath, timestamp: '2026-01-01T00:05:00Z' },
+    ]);
+    assert.equal(blocksOverridden, 1);
+  });
+});
+
+describe('rollup: nudge follow-through by trigger', () => {
+  test('counts nudge follow-through as manual only, tracking auto-triggered compactions separately', () => {
+    const filePath = path.join(
+      os.tmpdir(),
+      `warden-rollup-nudge-trigger-${process.hrtime.bigint()}.jsonl`,
+    );
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({
+        type: 'system',
+        subtype: 'compact_boundary',
+        timestamp: '2026-01-01T00:05:00Z',
+        compactMetadata: { trigger: 'auto' },
+      }) + '\n',
+    );
+    const { nudgesFollowedManual, nudgesFollowedAuto } = rollup([
+      { action: 'COMPACT', sessionKey: filePath, timestamp: '2026-01-01T00:00:00Z' },
+    ]);
+    assert.equal(nudgesFollowedManual, 0);
+    assert.equal(nudgesFollowedAuto, 1);
+  });
+
+  test('counts nudge follow-through as manual when the harness reports a manual trigger', () => {
+    const filePath = path.join(
+      os.tmpdir(),
+      `warden-rollup-nudge-manual-${process.hrtime.bigint()}.jsonl`,
+    );
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({
+        type: 'system',
+        subtype: 'compact_boundary',
+        timestamp: '2026-01-01T00:05:00Z',
+        compactMetadata: { trigger: 'manual' },
+      }) + '\n',
+    );
+    const { nudgesFollowedManual, nudgesFollowedAuto } = rollup([
+      { action: 'COMPACT', sessionKey: filePath, timestamp: '2026-01-01T00:00:00Z' },
+    ]);
+    assert.equal(nudgesFollowedManual, 1);
+    assert.equal(nudgesFollowedAuto, 0);
+  });
+
+  test('buckets follow-through as unknown-trigger when the harness never sets compactMetadata', () => {
+    const filePath = path.join(
+      os.tmpdir(),
+      `warden-rollup-nudge-unknown-${process.hrtime.bigint()}.jsonl`,
+    );
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({
+        type: 'system',
+        subtype: 'compact_boundary',
+        timestamp: '2026-01-01T00:05:00Z',
+      }) + '\n',
+    );
+    const { nudgesFollowedManual, nudgesFollowedAuto, nudgesFollowedUnknownTrigger } = rollup([
+      {
+        action: 'COMPACT',
+        harness: 'codex',
+        sessionKey: filePath,
+        timestamp: '2026-01-01T00:00:00Z',
+      },
+    ]);
+    assert.equal(nudgesFollowedManual, 0);
+    assert.equal(nudgesFollowedAuto, 0);
+    assert.equal(nudgesFollowedUnknownTrigger, 1);
+  });
+
+  test('tallies nudgesByHarness, defaulting undefined harness to claude-code', () => {
+    const { nudgesByHarness } = rollup([
+      { action: 'COMPACT', timestamp: '2026-01-01T00:00:00Z' },
+      { action: 'CHECKPOINT', harness: 'codex', timestamp: '2026-01-01T00:00:00Z' },
+    ]);
+    assert.equal(nudgesByHarness['claude-code'], 1);
+    assert.equal(nudgesByHarness.codex, 1);
+  });
+});
+
+describe('compactionsAfter', () => {
+  test('returns the trigger for each compact_boundary after the timestamp', () => {
+    const filePath = path.join(
+      os.tmpdir(),
+      `warden-rollup-compactions-${process.hrtime.bigint()}.jsonl`,
+    );
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({
+        type: 'system',
+        subtype: 'compact_boundary',
+        timestamp: '2026-01-02T00:00:00Z',
+        compactMetadata: { trigger: 'manual' },
+      }) + '\n',
+    );
+    assert.deepEqual(compactionsAfter(filePath, '2026-01-01T00:00:00Z'), [
+      { timestamp: '2026-01-02T00:00:00Z', trigger: 'manual' },
+    ]);
+  });
+
+  test('trigger is null when compactMetadata is absent', () => {
+    const filePath = path.join(
+      os.tmpdir(),
+      `warden-rollup-compactions-null-${process.hrtime.bigint()}.jsonl`,
+    );
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({
+        type: 'system',
+        subtype: 'compact_boundary',
+        timestamp: '2026-01-02T00:00:00Z',
+      }) + '\n',
+    );
+    assert.deepEqual(compactionsAfter(filePath, '2026-01-01T00:00:00Z'), [
+      { timestamp: '2026-01-02T00:00:00Z', trigger: null },
+    ]);
   });
 });
