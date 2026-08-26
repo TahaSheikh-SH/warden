@@ -244,8 +244,8 @@ async function main() {
   );
   console.log('');
   console.log(
-    'caveat: cross-run token variance up to 30x on identical tasks (Bai et al.) —' +
-      ' treat any single-run before/after delta as noise; repeated runs or a large N are needed for a real comparison.',
+    'caveat: cross-run token variance can be large on identical tasks — treat' +
+      ' any single-run before/after delta as noise; repeated runs or a large N are needed for a real comparison.',
   );
 }
 

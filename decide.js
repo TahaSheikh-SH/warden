@@ -78,13 +78,9 @@ function exceedsCompactThreshold(state) {
     action: ACTIONS.COMPACT,
     reason: overAbsolute
       ? `context used ${state.contextUsedTokens.toLocaleString()} tokens >= ` +
-        `${THRESHOLDS.compactContextTokens.toLocaleString()}-token compact floor ` +
-        `(Anthropic clear_tool_uses_20250919 default trigger; corroborated by ` +
-        `Gemini 2.5 tech report and LOCA-bench, 2026)`
+        `${THRESHOLDS.compactContextTokens.toLocaleString()}-token compact floor`
       : `context used ${(state.contextUsedPct * 100).toFixed(1)}% >= ` +
-        `${(THRESHOLDS.compactContextPct * 100).toFixed(0)}% compact threshold ` +
-        `(MindStudio, 2026 — engineering guidance, compact before the 70-80% ` +
-        `degradation zone)`,
+        `${(THRESHOLDS.compactContextPct * 100).toFixed(0)}% compact threshold`,
   };
 }
 
@@ -119,10 +115,7 @@ function isRepeatedCompactionDegrading(state) {
     action: ACTIONS.CHECKPOINT,
     reason:
       `${state.compactionCount} compactions already happened, each costing ` +
-      `~55k token-equivalents of cache re-write (measured, ` +
-      `reference/compaction-backtest.md, n=86) — that cost, not session ` +
-      `decay, is why repeated compaction stops paying for itself here ` +
-      `(the decay hypothesis itself failed backtest against 86 real epochs)`,
+      `~55k tokens of cache re-write — checkpoint instead of compacting again`,
   };
 }
 
@@ -139,8 +132,7 @@ function isLongUncompactedSession(state) {
     action: ACTIONS.CHECKPOINT,
     reason:
       `${state.turnsSinceLastCompaction} turns since last compaction >= ` +
-      `${THRESHOLDS.checkpointTurnsSinceCompaction}-turn checkpoint threshold ` +
-      `(local backtest, n=94 epochs/45 sessions, p90=289)`,
+      `${THRESHOLDS.checkpointTurnsSinceCompaction}-turn checkpoint threshold`,
   };
 }
 
@@ -173,9 +165,7 @@ function repeatedFileAccessObservation(state) {
   if (topCount < REPEATED_ACCESS_MIN_COUNT) return null;
   return (
     `observation: ${topPath} accessed ${topCount} times in the last ` +
-    `${recentToolCalls.length} tool calls (Bai et al. 2026 / Gemini 2.5 tech ` +
-    `report — repeated file access correlates with cost/failure; not a ` +
-    `diagnosis of why)`
+    `${recentToolCalls.length} tool calls`
   );
 }
 
@@ -235,12 +225,8 @@ function isCyclicToolCallLoop(state) {
     action: ACTIONS.CHECKPOINT,
     reason:
       `observation: tool-call cycle detected — [${cycle.pattern.join(', ')}] ` +
-      `repeating in the last ${recentToolCalls.length} tool calls (Lee et al. ` +
-      `2026, arXiv:2602.14798 — cyclic tool-call trajectories can inflate ` +
-      `tokens up to 142x with no single step looking abnormal; this is the ` +
-      `signature, not a diagnosis — benign overthinking produces the same ` +
-      `observable). COMPACT suppressed here: compacting would discard the ` +
-      `loop's evidence and refill the budget it's consuming.`,
+      `repeating in the last ${recentToolCalls.length} tool calls — ` +
+      `checkpoint instead of compacting so the loop isn't erased`,
   };
 }
 
@@ -265,10 +251,7 @@ function cacheThrashObservation(state) {
   if (streak < CACHE_THRASH_MIN_STREAK) return null;
   return (
     `observation: prompt cache written but not read for ${streak} consecutive ` +
-    `turns — the 5-minute TTL may be expiring between turns, repaying ~1.25x ` +
-    `base input as a full prefix rewrite each time (Bai et al. 2026; Manus ` +
-    `reports a 10x cost reduction from KV-cache discipline). Not measurable on ` +
-    `harnesses that report no cache-write figure at all (e.g. Codex).`
+    `turns — cache may be going cold between turns, repaying full input cost`
   );
 }
 
