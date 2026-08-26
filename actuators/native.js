@@ -9,39 +9,23 @@
 const fs = require('fs');
 const { evaluateSession } = require('../resourceState');
 const { ACTIONS } = require('../decide');
+const { LOG_FILE, logDecision } = require('./logStore');
+const { nudgeMessageFor } = require('./messages');
 const {
-  LOG_FILE,
   getLastNudgedAction,
   escalateHandoffToStop,
-  maybeNotifyHuman,
   shouldNotifyHuman,
-  nudgeMessageFor,
-  appendLogEntry,
-} = require('./shared');
-
-// Feeds the nudge-follow/override rates that scripts/rollup.js reports.
-function logDecision(decision, state, sessionFilePath, logFilePath) {
-  appendLogEntry(
-    {
-      timestamp: new Date().toISOString(),
-      sessionKey: sessionFilePath,
-      action: decision.action,
-      reasons: decision.reasons,
-      contextUsedPct: state.contextUsedPct,
-      contextWindowSource: state.contextWindowSource,
-      compactionCount: state.compactionCount,
-      sessionAgeMinutes: state.sessionAgeMinutes,
-    },
-    logFilePath,
-  );
-}
+} = require('./escalationPolicy');
+const { maybeNotifyHuman } = require('./notify');
+const { readStdin } = require('./hookStdin');
 
 // Wrapper so this file's sessionKey/log-path wiring is testable on its own.
 function computeEffectiveDecision(decision, sessionFilePath, logFilePath) {
   return escalateHandoffToStop(decision, sessionFilePath, logFilePath);
 }
 
-// Separate from main() so a test can inject execFileFn without stdin.
+// Separate from main() so a test can inject execFileFn without stdin. Feeds
+// the nudge-follow/override rates that scripts/rollup.js reports.
 function logDecisionAndNotify(
   effectiveDecision,
   state,
@@ -50,20 +34,8 @@ function logDecisionAndNotify(
   notifyOpts = {},
   logFilePath,
 ) {
-  logDecision(effectiveDecision, state, sessionFilePath, logFilePath);
+  logDecision({ decision: effectiveDecision, state, sessionKey: sessionFilePath, logFilePath });
   maybeNotifyHuman(effectiveDecision, sessionKey, logFilePath, notifyOpts);
-}
-
-function readStdin() {
-  return new Promise((resolve, reject) => {
-    let data = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (chunk) => {
-      data += chunk;
-    });
-    process.stdin.on('end', () => resolve(data));
-    process.stdin.on('error', reject);
-  });
 }
 
 // COMPACT/CHECKPOINT/HANDOFF stay advisory. Only STOP hard-blocks (exit 2),

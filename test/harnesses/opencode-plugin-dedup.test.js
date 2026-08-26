@@ -48,7 +48,7 @@ describe('WardenPlugin nudge dedup', () => {
 
     assert.equal(toasts.length, 1);
     const output = { system: [] };
-    await plugin['experimental.chat.system.transform']({}, output);
+    await plugin['experimental.chat.system.transform']({ sessionID: 'ses_dedup' }, output);
     assert.equal(output.system.length, 1);
   });
 
@@ -57,13 +57,13 @@ describe('WardenPlugin nudge dedup', () => {
     await plugin.event(assistantEvent('msg_1', 150000));
     // Drain the first turn's injection, so what the second turn queues (or
     // doesn't) is what this asserts on.
-    await plugin['experimental.chat.system.transform']({}, { system: [] });
+    await plugin['experimental.chat.system.transform']({ sessionID: 'ses_dedup' }, { system: [] });
 
     await plugin.event(assistantEvent('msg_2', 160000));
 
     assert.equal(toasts.length, 1);
     const output = { system: [] };
-    await plugin['experimental.chat.system.transform']({}, output);
+    await plugin['experimental.chat.system.transform']({ sessionID: 'ses_dedup' }, output);
     assert.equal(output.system.length, 0);
   });
 
@@ -88,6 +88,6 @@ describe('WardenPlugin nudge dedup', () => {
 
     assert.equal(toasts.length, 2);
     assert.equal(toasts[1].body.variant, 'error');
-    await assert.rejects(() => plugin['tool.execute.before']());
+    await assert.rejects(() => plugin['tool.execute.before']({ sessionID: 'ses_dedup' }));
   });
 });

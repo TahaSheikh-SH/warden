@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { escalateHandoffToStop, GRACE_TURN_LIMIT } = require('../../actuators/shared');
+const { escalateHandoffToStop, GRACE_TURN_LIMIT } = require('../../actuators/escalationPolicy');
 const { ACTIONS } = require('../../decide');
 
 function withTempLogFile(entries) {

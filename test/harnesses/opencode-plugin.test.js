@@ -73,12 +73,12 @@ describe('WardenPlugin', () => {
     });
 
     const output = { system: [] };
-    await plugin['experimental.chat.system.transform']({}, output);
+    await plugin['experimental.chat.system.transform']({ sessionID: 'ses_3' }, output);
     assert.equal(output.system.length, 1);
     assert.match(output.system[0], /\[warden\]/);
 
     const secondOutput = { system: [] };
-    await plugin['experimental.chat.system.transform']({}, secondOutput);
+    await plugin['experimental.chat.system.transform']({ sessionID: 'ses_3' }, secondOutput);
     assert.equal(secondOutput.system.length, 0);
   });
 });
@@ -148,7 +148,7 @@ describe('WardenPlugin STOP escalation', () => {
     for (let turn = 0; turn < 6; turn++) {
       await plugin.event({ event: handoffEvent });
       finalOutput = { system: [] };
-      await plugin['experimental.chat.system.transform']({}, finalOutput);
+      await plugin['experimental.chat.system.transform']({ sessionID }, finalOutput);
     }
 
     assert.match(finalOutput.system[0], /stop/i);
@@ -161,7 +161,7 @@ describe('WardenPlugin STOP escalation', () => {
     // hook, but tool.execute.before CAN throw to reject a tool call — once
     // STOP is the effective decision, that's now real enforcement, not just
     // a toast/system-prompt nudge.
-    await assert.rejects(() => plugin['tool.execute.before']());
+    await assert.rejects(() => plugin['tool.execute.before']({ sessionID }));
   });
 
   test('falls back to a per-plugin-instance synthetic sessionKey when info.sessionID is absent, instead of collapsing sessions into one bucket', async () => {

@@ -61,4 +61,28 @@ describe('opencode createSessionEvaluator', () => {
     assert.equal(result.state.contextWindowTokens, 1000000);
     assert.equal(result.decision.action, ACTIONS.CONTINUE);
   });
+
+  test('two sessions on one evaluator accumulate independently, not into a shared transcript', async () => {
+    const evaluator = createSessionEvaluator({ contextWindowTokens: 1000000 });
+    const eventFor = (sessionID, inputTokens) => ({
+      type: 'message.updated',
+      properties: {
+        info: {
+          role: 'assistant',
+          sessionID,
+          tokens: { input: inputTokens, output: 10, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+      },
+    });
+
+    await evaluator.ingest(eventFor('ses_a', 300000));
+    const resultB = await evaluator.ingest(eventFor('ses_b', 100));
+
+    assert.equal(resultB.sessionKey, 'ses_b');
+    assert.ok(
+      resultB.state.contextUsedTokens < 300000,
+      "session B's token accounting must not include session A's usage",
+    );
+    assert.equal(resultB.decision.action, ACTIONS.CONTINUE);
+  });
 });

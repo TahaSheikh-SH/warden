@@ -2,6 +2,7 @@
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -21,7 +22,8 @@ function tempTranscriptPath() {
 
 function cacheFileFor(sessionFilePath) {
   const safeKey = sessionFilePath.replace(/[^a-zA-Z0-9_-]/g, '_');
-  return path.join(os.homedir(), '.warden', 'cache', `${safeKey}.json`);
+  const hash = crypto.createHash('sha1').update(sessionFilePath).digest('hex').slice(0, 8);
+  return path.join(os.homedir(), '.warden', 'cache', `${safeKey}-${hash}.json`);
 }
 
 describe('buildResourceState incremental cache', () => {

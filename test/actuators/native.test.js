@@ -5,14 +5,14 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { getLastNudgedAction } = require('../../actuators/shared');
+const { getLastNudgedAction } = require('../../actuators/escalationPolicy');
 const {
   respondFor,
   computeEffectiveDecision,
   logDecisionAndNotify,
 } = require('../../actuators/native');
 const { ACTIONS } = require('../../decide');
-const { LOG_FILE: SHARED_LOG_FILE } = require('../../actuators/shared');
+const { LOG_FILE: SHARED_LOG_FILE } = require('../../actuators/logStore');
 
 function withTempLogFile(entries) {
   const logFilePath = path.join(os.tmpdir(), `warden-native-test-${process.hrtime.bigint()}.jsonl`);

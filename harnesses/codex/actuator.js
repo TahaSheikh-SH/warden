@@ -12,30 +12,15 @@ const {
 } = require('../../core/resourceStateCore');
 const { streamNormalizedEntries } = require('./transcript');
 const { decide, ACTIONS } = require('../../decide');
+const { nudgeMessageFor } = require('../../actuators/messages');
+const { logDecision } = require('../../actuators/logStore');
 const {
-  nudgeMessageFor,
   getLastNudgedAction,
-  appendLogEntry,
   escalateHandoffToStop,
-  maybeNotifyHuman,
   shouldNotifyHuman,
-} = require('../../actuators/shared');
-
-function logDecision(decision, state, sessionFilePath, logFilePath) {
-  appendLogEntry(
-    {
-      timestamp: new Date().toISOString(),
-      harness: 'codex',
-      sessionKey: sessionFilePath,
-      action: decision.action,
-      reasons: decision.reasons,
-      contextUsedPct: state.contextUsedPct,
-      compactionCount: state.compactionCount,
-      sessionAgeMinutes: state.sessionAgeMinutes,
-    },
-    logFilePath,
-  );
-}
+} = require('../../actuators/escalationPolicy');
+const { maybeNotifyHuman } = require('../../actuators/notify');
+const { readStdin } = require('../../actuators/hookStdin');
 
 // Mirrors actuators/native.js's logDecisionAndNotify.
 function logDecisionAndNotify(
@@ -46,20 +31,14 @@ function logDecisionAndNotify(
   notifyOpts = {},
   logFilePath,
 ) {
-  logDecision(effectiveDecision, state, sessionFilePath, logFilePath);
-  maybeNotifyHuman(effectiveDecision, sessionKey, logFilePath, notifyOpts);
-}
-
-function readStdin() {
-  return new Promise((resolve, reject) => {
-    let data = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (chunk) => {
-      data += chunk;
-    });
-    process.stdin.on('end', () => resolve(data));
-    process.stdin.on('error', reject);
+  logDecision({
+    harness: 'codex',
+    decision: effectiveDecision,
+    state,
+    sessionKey: sessionFilePath,
+    logFilePath,
   });
+  maybeNotifyHuman(effectiveDecision, sessionKey, logFilePath, notifyOpts);
 }
 
 function computeEffectiveDecision(decision, sessionFilePath, logFilePath) {

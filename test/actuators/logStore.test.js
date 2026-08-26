@@ -18,7 +18,8 @@ const {
 describe('sessionLogFile', () => {
   test('places the file under SESSIONS_DIR, named after the sessionKey', () => {
     const result = sessionLogFile('session-a');
-    assert.equal(result, path.join(SESSIONS_DIR, 'session-a.jsonl'));
+    assert.equal(path.dirname(result), SESSIONS_DIR);
+    assert.match(path.basename(result), /^session-a-[0-9a-f]{8}\.jsonl$/);
     assert.equal(path.dirname(SESSIONS_DIR), LOG_DIR);
   });
 
@@ -32,6 +33,18 @@ describe('sessionLogFile', () => {
     const a = sessionLogFile('session-a');
     const b = sessionLogFile('session-b');
     assert.notEqual(a, b);
+  });
+
+  test('two keys that only differ by a separator character no longer collide', () => {
+    // Naive sanitization (replace unsafe chars with "_") maps both of these
+    // to "a_b" — the regression this hash suffix guards against.
+    const a = sessionLogFile('/a/b');
+    const b = sessionLogFile('a-b');
+    assert.notEqual(a, b);
+  });
+
+  test('is deterministic: the same sessionKey always resolves to the same file', () => {
+    assert.equal(sessionLogFile('session-a'), sessionLogFile('session-a'));
   });
 });
 

@@ -12,29 +12,10 @@ const {
 } = require('../../core/resourceStateCore');
 const { normalizeEvent } = require('./transcript');
 const { decide, ACTIONS } = require('../../decide');
-const {
-  nudgeMessageFor,
-  appendLogEntry,
-  getLastNudgedAction,
-  escalateHandoffToStop,
-  maybeNotifyHuman,
-} = require('../../actuators/shared');
-
-function logDecision(decision, state, sessionKey, logFilePath) {
-  appendLogEntry(
-    {
-      timestamp: new Date().toISOString(),
-      harness: 'opencode',
-      sessionKey,
-      action: decision.action,
-      reasons: decision.reasons,
-      contextUsedPct: state.contextUsedPct,
-      compactionCount: state.compactionCount,
-      sessionAgeMinutes: state.sessionAgeMinutes,
-    },
-    logFilePath,
-  );
-}
+const { nudgeMessageFor } = require('../../actuators/messages');
+const { logDecision } = require('../../actuators/logStore');
+const { getLastNudgedAction, escalateHandoffToStop } = require('../../actuators/escalationPolicy');
+const { maybeNotifyHuman } = require('../../actuators/notify');
 
 // Real per-model window via client.config.providers(), cached per
 // providerID/modelID pair since it can't change mid-session.
@@ -62,19 +43,27 @@ function createContextWindowResolver(client) {
   };
 }
 
-// Exported separately so it's testable without a real OpenCode client.
+// One OpenCode server process hosts every concurrent chat session, and this
+// plugin is instantiated once for the whole server (PluginInput carries no
+// sessionID) — so all per-session state here must be keyed by sessionKey,
+// never shared across sessions the way a single-session harness could get
+// away with.
 function createSessionEvaluator({ contextWindowTokens, client, logFilePath } = {}) {
-  const entries = [];
+  const entriesBySession = new Map();
   const resolveContextWindowTokens = createContextWindowResolver(client);
-  // Sticky: a compaction event carries no providerID/modelID, and the window
-  // must not be lost whenever the latest event isn't a message.
-  let lastKnownContextWindowTokens = null;
+  // Sticky per session: a compaction event carries no providerID/modelID, and
+  // the window must not be lost whenever the latest event isn't a message.
+  const lastKnownContextWindowBySession = new Map();
 
   return {
     logFilePath,
-    async ingest(event) {
+    async ingest(event, fallbackSessionKey) {
       const normalized = normalizeEvent(event);
       if (!normalized) return null;
+
+      const sessionKey = normalized.sessionId || fallbackSessionKey;
+      if (!entriesBySession.has(sessionKey)) entriesBySession.set(sessionKey, []);
+      const entries = entriesBySession.get(sessionKey);
       entries.push(normalized);
 
       if (normalized.providerID && normalized.modelID) {
@@ -82,16 +71,16 @@ function createSessionEvaluator({ contextWindowTokens, client, logFilePath } = {
           normalized.providerID,
           normalized.modelID,
         );
-        if (resolved) lastKnownContextWindowTokens = resolved;
+        if (resolved) lastKnownContextWindowBySession.set(sessionKey, resolved);
       }
 
       const state = await reduceTranscriptEntries(entries, {
-        contextWindowTokens: contextWindowTokens || lastKnownContextWindowTokens,
+        contextWindowTokens: contextWindowTokens || lastKnownContextWindowBySession.get(sessionKey),
       });
       // Unknown or too-small window — refuse to act, same as native.js/cli.js.
-      if (!isContextUsageTrustworthy(state)) return { state, decision: null };
+      if (!isContextUsageTrustworthy(state)) return { state, decision: null, sessionKey };
       const decision = decide(state);
-      return { state, decision };
+      return { state, decision, sessionKey };
     },
   };
 }
@@ -122,28 +111,31 @@ function streamingMessageId(event) {
 async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindowTokens } = {}) {
   const client = input && input.client;
   const evaluator = createSessionEvaluator({ client, logFilePath, contextWindowTokens });
+  // One plugin instance serves every session on this OpenCode server, so all
+  // per-session state below is keyed by sessionKey — never a bare scalar —
+  // or one session's nudge/toast/block leaks into every other session's turn.
   // Handed between the `event` and transform hooks; cleared once delivered.
-  let pendingMessage = null;
+  const pendingMessageBySession = new Map();
   // Keeps sessions with no id out of one shared escalation/dedup bucket.
   const fallbackSessionKey = `opencode-${process.pid}-${Date.now()}`;
   // Dedup on streamingMessageId so GRACE_TURN_LIMIT can't exhaust within a
   // single turn.
-  let lastProcessedMessageId = null;
+  const lastProcessedMessageIdBySession = new Map();
   // Never cleared by the transform hook, unlike pendingMessage: tool calls
-  // must keep being blocked for as long as the session stays STOP'd.
-  let stopBlockMessage = null;
+  // must keep being blocked for as long as that session stays STOP'd.
+  const stopBlockMessageBySession = new Map();
 
   return {
     event: async ({ event }) => {
-      const result = await evaluator.ingest(event);
+      const result = await evaluator.ingest(event, fallbackSessionKey);
       if (!result || !result.decision) return;
       if (result.decision.action === ACTIONS.CONTINUE) return;
 
+      const { sessionKey } = result;
       const messageId = streamingMessageId(event);
-      if (messageId && messageId === lastProcessedMessageId) return;
-      if (messageId) lastProcessedMessageId = messageId;
+      if (messageId && messageId === lastProcessedMessageIdBySession.get(sessionKey)) return;
+      if (messageId) lastProcessedMessageIdBySession.set(sessionKey, messageId);
 
-      const sessionKey = result.state.sessionId || fallbackSessionKey;
       // decide() is stateless, so it re-emits the same action every turn once
       // a floor is crossed — without this the toast repeats for the rest of the
       // session. Read BEFORE logDecision appends this turn's entry, same as
@@ -157,26 +149,40 @@ async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindow
         evaluator.logFilePath,
       );
 
-      logDecision(effectiveDecision, result.state, sessionKey, evaluator.logFilePath);
+      logDecision({
+        harness: 'opencode',
+        decision: effectiveDecision,
+        state: result.state,
+        sessionKey,
+        logFilePath: evaluator.logFilePath,
+      });
       maybeNotifyHuman(effectiveDecision, sessionKey, evaluator.logFilePath, notifyOpts);
       // No turn-abort hook exists in the OpenCode SDK
       // (anomalyco/opencode#16626), so STOP blocks through tool.execute.before
       // rather than relying on the toast alone.
       const message = respondFor(effectiveDecision.action, effectiveDecision.reasons);
-      stopBlockMessage = effectiveDecision.action === ACTIONS.STOP ? message : null;
+      if (effectiveDecision.action === ACTIONS.STOP) {
+        stopBlockMessageBySession.set(sessionKey, message);
+      } else {
+        stopBlockMessageBySession.delete(sessionKey);
+      }
 
       if ((effectiveDecision.action !== ACTIONS.STOP && alreadyNudgedThisAction) || !message)
         return;
 
-      pendingMessage = message;
+      pendingMessageBySession.set(sessionKey, message);
       await showToastForAction(client, effectiveDecision.action, message);
     },
-    'experimental.chat.system.transform': async (_input, output) => {
+    'experimental.chat.system.transform': async (transformInput, output) => {
+      const sessionKey = (transformInput && transformInput.sessionID) || fallbackSessionKey;
+      const pendingMessage = pendingMessageBySession.get(sessionKey);
       if (!pendingMessage) return;
       output.system.push(pendingMessage);
-      pendingMessage = null;
+      pendingMessageBySession.delete(sessionKey);
     },
-    'tool.execute.before': async () => {
+    'tool.execute.before': async (toolInput) => {
+      const sessionKey = (toolInput && toolInput.sessionID) || fallbackSessionKey;
+      const stopBlockMessage = stopBlockMessageBySession.get(sessionKey);
       if (stopBlockMessage) throw new Error(stopBlockMessage);
     },
   };

@@ -4,6 +4,7 @@
 // core/resourceStateCore.js reduces. Nothing harness-specific belongs in the
 // core (AGENTS.md).
 
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -23,9 +24,14 @@ const { decide } = require('./decide');
 // persisted between invocations — otherwise every turn re-folds from line 1.
 const CACHE_DIR = path.join(os.homedir(), '.warden', 'cache');
 
+// A short hash of the raw key is appended because sanitizing unsafe
+// characters alone is lossy (e.g. "/a/b" and "a-b" both collapse to "a_b"),
+// which would otherwise let two different sessions share one cache file.
 function cacheFileFor(sessionFilePath) {
-  const safeKey = String(sessionFilePath).replace(/[^a-zA-Z0-9_-]/g, '_');
-  return path.join(CACHE_DIR, `${safeKey}.json`);
+  const raw = String(sessionFilePath);
+  const safeKey = raw.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const hash = crypto.createHash('sha1').update(raw).digest('hex').slice(0, 8);
+  return path.join(CACHE_DIR, `${safeKey}-${hash}.json`);
 }
 
 function readAccumulatorCache(sessionFilePath) {

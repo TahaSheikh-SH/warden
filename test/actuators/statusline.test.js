@@ -5,9 +5,10 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { formatStatusLine } = require('../../actuators/statusline');
+const { formatStatusLine, resolveLogFile } = require('../../actuators/statusline');
 const { nudgeMessageFor } = require('../../actuators/messages');
 const { ACTIONS } = require('../../decide');
+const { sessionLogFile, latestLogFile } = require('../../actuators/logStore');
 
 function withTempLogFile(lines) {
   const logFilePath = path.join(
@@ -59,5 +60,29 @@ describe('formatStatusLine', () => {
       JSON.stringify({ action: ACTIONS.HANDOFF, reasons: ['fresh'] }),
     ]);
     assert.equal(formatStatusLine(logFilePath), nudgeMessageFor(ACTIONS.HANDOFF, ['fresh']));
+  });
+});
+
+describe('resolveLogFile', () => {
+  test('resolves the log file for this session from transcript_path on stdin', () => {
+    const transcriptPath = '/Users/example/.claude/projects/foo/session-a.jsonl';
+    assert.equal(
+      resolveLogFile(JSON.stringify({ transcript_path: transcriptPath })),
+      sessionLogFile(transcriptPath),
+    );
+  });
+
+  test('two different sessions resolve to two different log files', () => {
+    const a = resolveLogFile(JSON.stringify({ transcript_path: '/tmp/session-a.jsonl' }));
+    const b = resolveLogFile(JSON.stringify({ transcript_path: '/tmp/session-b.jsonl' }));
+    assert.notEqual(a, b);
+  });
+
+  test('falls back to latestLogFile() when stdin is malformed JSON', () => {
+    assert.equal(resolveLogFile('not json'), latestLogFile());
+  });
+
+  test('falls back to latestLogFile() when transcript_path is missing', () => {
+    assert.equal(resolveLogFile(JSON.stringify({})), latestLogFile());
   });
 });

@@ -3,6 +3,7 @@
 // JSONL decision log I/O, shared by escalationPolicy.js (reads) and
 // notify.js (writes). Split out to avoid a require() cycle between them.
 
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -12,10 +13,15 @@ const LOG_FILE = path.join(LOG_DIR, 'log.jsonl');
 const SESSIONS_DIR = path.join(LOG_DIR, 'sessions');
 
 // One file per session, so sessions don't contend for one growing log.
-// sessionKey is often a full transcript path, so collapse unsafe chars.
+// sessionKey is often a full transcript path, so collapse unsafe chars —
+// a short hash of the raw key is appended because that collapse alone is
+// lossy (e.g. "/a/b" and "a-b" both sanitize to "a_b"); the hash keeps such
+// keys from silently sharing one session's log file.
 function sessionLogFile(sessionKey) {
-  const safeKey = String(sessionKey).replace(/[^a-zA-Z0-9_-]/g, '_');
-  return path.join(SESSIONS_DIR, `${safeKey}.jsonl`);
+  const raw = String(sessionKey);
+  const safeKey = raw.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const hash = crypto.createHash('sha1').update(raw).digest('hex').slice(0, 8);
+  return path.join(SESSIONS_DIR, `${safeKey}-${hash}.jsonl`);
 }
 
 // Newest per-session log, falling back to the legacy shared one. Readers
@@ -34,6 +40,28 @@ function latestLogFile(sessionsDir = SESSIONS_DIR) {
   } catch {
     return LOG_FILE; // sessions dir missing/unreadable — legacy log is the best available
   }
+}
+
+// Shared shape for a decision-log line, used by every harness actuator so a
+// schema change is a one-file edit. `harness` is omitted (native.js, Claude
+// Code) or named (codex/opencode/pi); extra fields undefined for a given
+// harness (e.g. contextWindowSource) are dropped by JSON.stringify, so they
+// stay harmless no-ops for harnesses that don't set them.
+function logDecision({ harness, decision, state, sessionKey, logFilePath }) {
+  appendLogEntry(
+    {
+      timestamp: new Date().toISOString(),
+      harness,
+      sessionKey,
+      action: decision.action,
+      reasons: decision.reasons,
+      contextUsedPct: state.contextUsedPct,
+      contextWindowSource: state.contextWindowSource,
+      compactionCount: state.compactionCount,
+      sessionAgeMinutes: state.sessionAgeMinutes,
+    },
+    logFilePath,
+  );
 }
 
 function appendLogEntry(entry, logFile = sessionLogFile(entry.sessionKey)) {
@@ -63,5 +91,6 @@ module.exports = {
   sessionLogFile,
   latestLogFile,
   appendLogEntry,
+  logDecision,
   readLogLines,
 };

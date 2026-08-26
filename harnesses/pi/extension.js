@@ -7,29 +7,10 @@
 
 const { decide, ACTIONS } = require('../../decide');
 const { computeGrowthProjection, GROWTH_WINDOW_TURNS } = require('../../core/resourceStateCore');
-const {
-  nudgeMessageFor,
-  appendLogEntry,
-  getLastNudgedAction,
-  escalateHandoffToStop,
-  maybeNotifyHuman,
-} = require('../../actuators/shared');
-
-function logDecision(decision, state, sessionKey, logFilePath) {
-  appendLogEntry(
-    {
-      timestamp: new Date().toISOString(),
-      harness: 'pi',
-      sessionKey,
-      action: decision.action,
-      reasons: decision.reasons,
-      contextUsedPct: state.contextUsedPct,
-      compactionCount: state.compactionCount,
-      sessionAgeMinutes: state.sessionAgeMinutes,
-    },
-    logFilePath,
-  );
-}
+const { nudgeMessageFor } = require('../../actuators/messages');
+const { logDecision } = require('../../actuators/logStore');
+const { getLastNudgedAction, escalateHandoffToStop } = require('../../actuators/escalationPolicy');
+const { maybeNotifyHuman } = require('../../actuators/notify');
 
 // Tracks what decide() needs beyond ctx.getContextUsage() — compaction count,
 // burn-rate window, session age. Exported separately so it's testable without
@@ -121,7 +102,13 @@ function WardenPiExtension(pi, { logFilePath, notifyOpts = {} } = {}) {
       tracker.logFilePath,
     );
 
-    logDecision(effectiveDecision, state, tracker.sessionKey, tracker.logFilePath);
+    logDecision({
+      harness: 'pi',
+      decision: effectiveDecision,
+      state,
+      sessionKey: tracker.sessionKey,
+      logFilePath: tracker.logFilePath,
+    });
     maybeNotifyHuman(effectiveDecision, tracker.sessionKey, tracker.logFilePath, notifyOpts);
 
     const message = respondFor(effectiveDecision.action, effectiveDecision.reasons);
