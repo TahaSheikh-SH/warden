@@ -59,22 +59,13 @@ describe('getLastNudgedAction', () => {
 });
 
 describe('respondFor STOP', () => {
-  test('STOP hard-blocks with exit code 2 by default', () => {
+  // Task 2: exit code 2 on UserPromptSubmit erases the user's prompt
+  // (Claude Code docs) — STOP must never hard-block on this harness.
+  test('STOP never returns a non-zero exit code', () => {
     const { exitCode, output, stderr } = respondFor(ACTIONS.STOP, ['handoff ignored 5x']);
-    assert.equal(exitCode, 2);
-    assert.equal(output, null);
+    assert.equal(exitCode, 0);
+    assert.match(output.hookSpecificOutput.additionalContext, /\[warden\]/);
     assert.match(stderr, /\[warden\]/);
-  });
-
-  test('STOP falls back to advisory when WARDEN_DISABLE_STOP_BLOCK is set', () => {
-    process.env.WARDEN_DISABLE_STOP_BLOCK = '1';
-    try {
-      const { exitCode, output } = respondFor(ACTIONS.STOP, ['handoff ignored 5x']);
-      assert.equal(exitCode, 0);
-      assert.match(output.hookSpecificOutput.additionalContext, /\[warden\]/);
-    } finally {
-      delete process.env.WARDEN_DISABLE_STOP_BLOCK;
-    }
   });
 });
 

@@ -38,17 +38,14 @@ function logDecisionAndNotify(
   maybeNotifyHuman(effectiveDecision, sessionKey, logFilePath, notifyOpts);
 }
 
-// COMPACT/CHECKPOINT/HANDOFF stay advisory. Only STOP hard-blocks (exit 2),
-// and only after GRACE_TURN_LIMIT ignored HANDOFFs — a blanket HANDOFF block
-// was reverted once at a ~97% override rate. WARDEN_DISABLE_STOP_BLOCK=1
-// makes even STOP advisory.
+// All actions, including STOP, stay advisory on Claude Code: exit code 2 on
+// UserPromptSubmit blocks prompt processing and erases what the user typed
+// (Claude Code docs), and the only documented escape is an env var requiring
+// a restart. Enforcement is asymmetric by design (AGENTS.md) — Pi/OpenCode
+// keep their own in-process blocks at interception points they already own.
 function respondFor(action, reasons) {
   const message = nudgeMessageFor(action, reasons);
   if (!message) return { exitCode: 0, output: null };
-
-  if (action === ACTIONS.STOP && process.env.WARDEN_DISABLE_STOP_BLOCK !== '1') {
-    return { exitCode: 2, output: null, stderr: message };
-  }
 
   return {
     exitCode: 0,

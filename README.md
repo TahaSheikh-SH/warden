@@ -50,7 +50,6 @@ To have warden act on its own recommendation (not just print it), install
 | Variable | Effect |
 |---|---|
 | `WARDEN_CONTEXT_WINDOW` | Same as `--context-window`. |
-| `WARDEN_DISABLE_STOP_BLOCK=1` | Claude Code normally hard-blocks on `STOP`; this reverts it to advisory-only. |
 | `WARDEN_NOTIFY=1` | Fire an OS desktop notification when a nudge keeps going unheeded (see below). Off by default. |
 
 ### Desktop notifications (`WARDEN_NOTIFY`)
@@ -143,8 +142,10 @@ See `AGENTS.md` for design invariants and rationale.
   none resolves, warden reports `UNKNOWN` rather than guessing — set
   `WARDEN_CONTEXT_WINDOW` to get percentage-based recommendations back.
 - `STOP` fires after `HANDOFF` is ignored `GRACE_TURN_LIMIT` (5) turns in a
-  row, and stays escalated for the rest of the session. Claude Code/Codex
-  can hard-block the turn; Pi/OpenCode can only notify harder.
+  row, and stays escalated for the rest of the session. Claude Code is
+  advisory-only for every action, including `STOP` — exit code 2 on
+  `UserPromptSubmit` erases the user's prompt, so warden never returns it.
+  Codex can hard-block the turn; Pi/OpenCode can only notify harder.
 - Codex has no deterministic, permission-free way to surface advisory
   nudges in its own terminal output — no command-backed status line, and
   its `notify` hook can only spawn an external program (same OS-popup
