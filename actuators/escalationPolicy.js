@@ -90,9 +90,12 @@ function countTrailingAction(
 }
 
 // Records the highest milestone already notified, so a count that jumps past
-// one (2 -> 4) still notifies once instead of going silent.
-function notifyMarkerFile(logFilePath) {
-  return `${logFilePath}.notified`;
+// one (2 -> 4) still notifies once instead of going silent. Scoped per
+// action: a shared file let one action's streak (e.g. six straight
+// COMPACTs reaching milestone 5) block or bleed into an unrelated later
+// action's own streak (e.g. HANDOFF stuck below that leftover milestone).
+function notifyMarkerFile(logFilePath, action) {
+  return `${logFilePath}.notified.${action}`;
 }
 
 function readNotifiedMilestone(markerFilePath) {
@@ -128,7 +131,7 @@ function shouldNotifyHuman(
   action,
   sessionKey,
   logFilePath = sessionLogFile(sessionKey),
-  markerFilePath = notifyMarkerFile(logFilePath),
+  markerFilePath = notifyMarkerFile(logFilePath, action),
 ) {
   if (action === ACTIONS.CONTINUE) return false;
   const count = countTrailingAction(action, sessionKey, logFilePath);

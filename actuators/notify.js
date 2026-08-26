@@ -77,7 +77,10 @@ function maybeNotifyHuman(
   const count = countTrailingAction(effectiveDecision.action, sessionKey, logFilePath);
   const message = ACTION_MESSAGES[effectiveDecision.action] || effectiveDecision.action;
   notifyHuman(message, opts);
-  markMilestoneNotified(notifyMarkerFile(logFilePath), highestReachedMilestone(count));
+  markMilestoneNotified(
+    notifyMarkerFile(logFilePath, effectiveDecision.action),
+    highestReachedMilestone(count),
+  );
 }
 
 module.exports = {

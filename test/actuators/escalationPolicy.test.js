@@ -162,7 +162,7 @@ describe('shouldNotifyHuman', () => {
       { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
       { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
     ]);
-    markMilestoneNotified(notifyMarkerFile(logFilePath), 3);
+    markMilestoneNotified(notifyMarkerFile(logFilePath, ACTIONS.HANDOFF), 3);
     assert.equal(shouldNotifyHuman(ACTIONS.HANDOFF, 'session-a', logFilePath), false);
   });
 
@@ -182,5 +182,21 @@ describe('shouldNotifyHuman', () => {
       { sessionKey: 'session-a', action: ACTIONS.CONTINUE },
     ]);
     assert.equal(shouldNotifyHuman(ACTIONS.CONTINUE, 'session-a', logFilePath), false);
+  });
+
+  test('a COMPACT streak marking a high milestone does not suppress a later HANDOFF streak in the same session', () => {
+    const logFilePath = withTempLogFile([
+      { sessionKey: 'session-a', action: ACTIONS.COMPACT },
+      { sessionKey: 'session-a', action: ACTIONS.COMPACT },
+      { sessionKey: 'session-a', action: ACTIONS.COMPACT },
+      { sessionKey: 'session-a', action: ACTIONS.COMPACT },
+      { sessionKey: 'session-a', action: ACTIONS.COMPACT },
+      { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
+      { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
+      { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
+    ]);
+    markMilestoneNotified(notifyMarkerFile(logFilePath, ACTIONS.COMPACT), 5);
+
+    assert.equal(shouldNotifyHuman(ACTIONS.HANDOFF, 'session-a', logFilePath), true);
   });
 });
