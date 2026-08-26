@@ -48,9 +48,16 @@ function initialAccumulator() {
     sessionId: null,
     cwd: null,
     gitBranch: null,
+    // First-wins, like sessionId/cwd — format-drift diagnostic context (never
+    // a gate; not every harness reports one).
+    harnessVersion: null,
     firstTimestamp: null,
     lastTimestamp: null,
     messageCount: 0,
+    // How many assistant entries actually carried a parsed usage object, vs.
+    // messageCount below which counts assistant entries regardless. See
+    // isFormatDriftDetected below.
+    assistantUsageCount: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     totalCacheReadTokens: 0,
@@ -72,6 +79,7 @@ function applyMetadata(accumulator, entry) {
   accumulator.gitBranch = accumulator.gitBranch || entry.gitBranch || null;
   accumulator.detectedContextWindowTokens =
     accumulator.detectedContextWindowTokens || entry.detectedContextWindowTokens || null;
+  accumulator.harnessVersion = accumulator.harnessVersion || entry.harnessVersion || null;
 }
 
 function applyTimestamp(accumulator, entry) {
@@ -98,6 +106,7 @@ function applyAssistantUsage(accumulator, entry) {
 
   const usage = entry.usage;
   if (!usage) return;
+  accumulator.assistantUsageCount += 1;
 
   const input = usage.inputTokens || 0;
   const output = usage.outputTokens || 0;
@@ -139,6 +148,20 @@ function isContextUsageTrustworthy(state) {
   return state.contextWindowTokens > 0 && state.contextUsedPct <= 1;
 }
 
+// Format-drift canary: if a harness renames the field usage lives under,
+// every parsed line still validates (usage is optional) but zero assistant
+// entries ever fold a usage object, so contextUsedTokens stays 0 and the
+// decision pipeline silently reads CONTINUE forever. One shared rule, so
+// every file-streaming adapter applies the identical threshold instead of
+// each keeping its own copy. A handful of lines with no usage yet is normal
+// session startup, not drift — this floor is well above that. Diagnostic
+// only; nothing may gate a decide() action on it.
+const FORMAT_DRIFT_LINE_THRESHOLD = 20;
+
+function isFormatDriftDetected({ lineCount, assistantUsageCount }) {
+  return lineCount > FORMAT_DRIFT_LINE_THRESHOLD && assistantUsageCount === 0;
+}
+
 // Pure aside from Date.now() for lastActivityAgeMinutes.
 function finalizeAccumulator(accumulator, opts = {}) {
   // null, not an assumed default: guessing a window is Anthropic-specific
@@ -169,6 +192,7 @@ function finalizeAccumulator(accumulator, opts = {}) {
     sessionId: accumulator.sessionId,
     cwd: accumulator.cwd,
     gitBranch: accumulator.gitBranch,
+    harnessVersion: accumulator.harnessVersion,
     contextWindowTokens,
     contextUsedTokens,
     contextUsedPct,
@@ -185,6 +209,7 @@ function finalizeAccumulator(accumulator, opts = {}) {
     sessionAgeMinutes,
     lastActivityAgeMinutes,
     messageCount: accumulator.messageCount,
+    assistantUsageCount: accumulator.assistantUsageCount,
   };
 }
 
@@ -205,5 +230,6 @@ module.exports = {
   initialAccumulator,
   computeGrowthProjection,
   isContextUsageTrustworthy,
+  isFormatDriftDetected,
   GROWTH_WINDOW_TURNS,
 };

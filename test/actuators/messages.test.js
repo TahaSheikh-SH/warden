@@ -2,7 +2,7 @@
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { nudgeMessageFor } = require('../../actuators/messages');
+const { nudgeMessageFor, driftWarningFor } = require('../../actuators/messages');
 const { ACTIONS } = require('../../decide');
 
 describe('nudgeMessageFor', () => {
@@ -45,5 +45,16 @@ describe('nudgeMessageFor', () => {
       const message = nudgeMessageFor(action, ['context high']);
       if (message) assert.doesNotMatch(message, /\$/);
     }
+  });
+});
+
+// A distinct message from the action nudges
+// above, since drift can fire even on CONTINUE (that's the whole point —
+// it's the case decide() itself can't see).
+describe('driftWarningFor', () => {
+  test('names the observability failure, not a decide() action', () => {
+    const message = driftWarningFor();
+    assert.match(message, /warden/i);
+    assert.match(message, /format/i);
   });
 });

@@ -21,6 +21,9 @@ function handleSessionMeta(base, entry) {
   base.sessionId = entry.payload.id || null;
   base.cwd = entry.payload.cwd || null;
   base.gitBranch = (entry.payload.git && entry.payload.git.branch) || null;
+  // Normalizes alongside claude-code's
+  // system.version into the shared harnessVersion field.
+  base.harnessVersion = entry.payload.cli_version || null;
   return base;
 }
 
@@ -75,12 +78,16 @@ function normalizeEntry(entry) {
     cwd: null,
     gitBranch: null,
     detectedContextWindowTokens: null,
+    harnessVersion: null,
   };
 
   const handler = HANDLERS[entry.type];
   return handler ? handler(base, entry) : base;
 }
 
+// opts.progress is mutated with {lineCount}, same contract as
+// claude-code/transcript.js, so a caller can compute the format-drift
+// canary's driftDetected without a second pass over the file.
 async function* streamNormalizedEntries(sessionFilePath, opts = {}) {
   const maxLines = opts.maxLines || Infinity;
   let lineCount = 0;
@@ -97,6 +104,7 @@ async function* streamNormalizedEntries(sessionFilePath, opts = {}) {
     }
     if (!line.trim()) continue;
     lineCount += 1;
+    if (opts.progress) opts.progress.lineCount = lineCount;
 
     let entry;
     try {

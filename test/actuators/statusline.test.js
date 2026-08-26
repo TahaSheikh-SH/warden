@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { formatStatusLine, resolveLogFile } = require('../../actuators/statusline');
-const { nudgeMessageFor } = require('../../actuators/messages');
+const { nudgeMessageFor, driftWarningFor } = require('../../actuators/messages');
 const { ACTIONS } = require('../../decide');
 const { sessionLogFile, latestLogFile } = require('../../actuators/logStore');
 
@@ -53,6 +53,27 @@ describe('formatStatusLine', () => {
       );
     });
   }
+
+  // The status line is the only channel that
+  // already renders unconditionally on Claude Code, so drift must not be
+  // swallowed just because the action itself is the silent-CONTINUE case.
+  test('renders the drift warning even when the logged action is CONTINUE', () => {
+    const logFilePath = withTempLogFile([
+      JSON.stringify({
+        action: ACTIONS.CONTINUE,
+        reasons: ['within thresholds'],
+        driftDetected: true,
+      }),
+    ]);
+    assert.equal(formatStatusLine(logFilePath), driftWarningFor());
+  });
+
+  test('a real nudge still wins over a stale drift flag from an earlier line', () => {
+    const logFilePath = withTempLogFile([
+      JSON.stringify({ action: ACTIONS.COMPACT, reasons: ['context high'], driftDetected: true }),
+    ]);
+    assert.equal(formatStatusLine(logFilePath), nudgeMessageFor(ACTIONS.COMPACT, ['context high']));
+  });
 
   test('uses only the last line when the log file has multiple entries', () => {
     const logFilePath = withTempLogFile([

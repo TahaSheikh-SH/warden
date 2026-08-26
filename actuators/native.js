@@ -10,7 +10,7 @@ const fs = require('fs');
 const { evaluateSession } = require('../resourceState');
 const { ACTIONS } = require('../decide');
 const { LOG_FILE, logDecision } = require('./logStore');
-const { nudgeMessageFor } = require('./messages');
+const { nudgeMessageFor, driftWarningFor } = require('./messages');
 const {
   getLastNudgedAction,
   escalateHandoffToStop,
@@ -43,8 +43,11 @@ function logDecisionAndNotify(
 // (Claude Code docs), and the only documented escape is an env var requiring
 // a restart. Enforcement is asymmetric by design (AGENTS.md) — Pi/OpenCode
 // keep their own in-process blocks at interception points they already own.
-function respondFor(action, reasons) {
-  const message = nudgeMessageFor(action, reasons);
+// driftDetected covers the case a nudge can't — CONTINUE has no message at
+// all, which is exactly what a renamed usage field silently produces
+// forever. A real action nudge still wins.
+function respondFor(action, reasons, driftDetected) {
+  const message = nudgeMessageFor(action, reasons) || (driftDetected ? driftWarningFor() : null);
   if (!message) return { exitCode: 0, output: null };
 
   return {
@@ -99,12 +102,12 @@ async function main() {
 
   const { exitCode, output, stderr } =
     effectiveDecision.action === ACTIONS.STOP
-      ? respondFor(effectiveDecision.action, effectiveDecision.reasons)
+      ? respondFor(effectiveDecision.action, effectiveDecision.reasons, state.driftDetected)
       : effectiveDecision.action !== ACTIONS.CONTINUE &&
           alreadyNudgedThisAction &&
           !notifyingHumanThisTurn
         ? { exitCode: 0, output: null, stderr: null }
-        : respondFor(effectiveDecision.action, effectiveDecision.reasons);
+        : respondFor(effectiveDecision.action, effectiveDecision.reasons, state.driftDetected);
 
   if (output) {
     process.stdout.write(JSON.stringify(output));

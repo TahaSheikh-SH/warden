@@ -57,6 +57,13 @@ function validateTranscriptEntry(entry) {
 // Re-exported below for existing importers of this module.
 const { MODEL_CONTEXT_WINDOWS, contextWindowForModel } = require('./contextWindow');
 
+// Format-drift canary: 'system' entries carry a version field (e.g.
+// "2.1.239") — diagnostic context only, never a gate.
+function harnessVersionOf(entry) {
+  if (entry.type !== 'system' || !entry.version) return null;
+  return entry.version;
+}
+
 // Maps a validated entry to NormalizedTranscriptEntry.
 function normalizeEntry(entry) {
   const { usage, model = null } = entry.message || {};
@@ -76,6 +83,7 @@ function normalizeEntry(entry) {
     sessionId: entry.sessionId || null,
     cwd: entry.cwd || null,
     gitBranch: entry.gitBranch || null,
+    harnessVersion: harnessVersionOf(entry),
     // First-wins in the core reducer, so a mid-session /model switch keeps the
     // first model's window — same as Codex's per-turn model_context_window.
     detectedContextWindowTokens: contextWindowForModel(model),

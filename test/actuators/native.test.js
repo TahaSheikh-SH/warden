@@ -13,6 +13,7 @@ const {
 } = require('../../actuators/native');
 const { ACTIONS } = require('../../decide');
 const { LOG_FILE: SHARED_LOG_FILE } = require('../../actuators/logStore');
+const { driftWarningFor } = require('../../actuators/messages');
 
 function withTempLogFile(entries) {
   const logFilePath = path.join(os.tmpdir(), `warden-native-test-${process.hrtime.bigint()}.jsonl`);
@@ -85,6 +86,29 @@ describe('respondFor advisory actions', () => {
   test("also mirrors the message to stderr, since systemMessage doesn't reliably render (anthropics/claude-code#50542)", () => {
     const { stderr, output } = respondFor(ACTIONS.COMPACT, ['context high']);
     assert.equal(stderr, output.systemMessage);
+  });
+});
+
+// CONTINUE has no nudge text at all, which is
+// exactly the case a renamed transcript field falls into — drift must still
+// surface here, not just on the harnesses whose action already has a message.
+describe('respondFor drift warning', () => {
+  test('CONTINUE with driftDetected renders the drift warning, not nothing', () => {
+    const { exitCode, output, stderr } = respondFor(ACTIONS.CONTINUE, ['within thresholds'], true);
+    assert.equal(exitCode, 0);
+    assert.equal(stderr, driftWarningFor());
+    assert.equal(output.systemMessage, driftWarningFor());
+  });
+
+  test('CONTINUE with no drift still renders nothing', () => {
+    const { output, stderr } = respondFor(ACTIONS.CONTINUE, ['within thresholds'], false);
+    assert.equal(output, null);
+    assert.equal(stderr, undefined);
+  });
+
+  test('a real action nudge wins over a stale drift flag rather than being replaced', () => {
+    const { output } = respondFor(ACTIONS.COMPACT, ['context high'], true);
+    assert.match(output.systemMessage, /Context usage is high/);
   });
 });
 

@@ -131,6 +131,18 @@ absolute floor is also the only rule that still works when the window is
 unknown. Threshold changes need a backtest (`scripts/backtest.js`) or a cited
 source — see AGENTS.md.
 
+### Format-drift canary
+
+Claude Code's transcript format is undocumented private on-disk storage — if a
+future version renames `usage` or moves it, every line still parses as valid
+JSON, `contextUsedTokens` silently stays 0, and warden would otherwise
+recommend `CONTINUE` forever with no signal. To catch that: if a session has
+parsed more than 20 transcript lines and none of them ever yielded a usable
+usage entry, warden logs `driftDetected: true` (plus `harnessVersion` when the
+harness reports one, for context) and surfaces a warning through the same
+channel it already uses for nudges — the status line on Claude Code, stderr on
+Codex. This is diagnostic only; it never gates a `decide()` action.
+
 ## Layout
 
 - `decide.js` — pure decision function.

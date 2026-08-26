@@ -8,7 +8,7 @@
 // file so this session's footer never shows another session's decision.
 
 const { latestLogFile, sessionLogFile, readLogLines } = require('./logStore');
-const { nudgeMessageFor } = require('./messages');
+const { nudgeMessageFor, driftWarningFor } = require('./messages');
 
 function formatStatusLine(logFilePath) {
   const lines = readLogLines(logFilePath).filter(Boolean);
@@ -22,7 +22,11 @@ function formatStatusLine(logFilePath) {
   }
 
   if (!entry || !Array.isArray(entry.reasons)) return null;
-  return nudgeMessageFor(entry.action, entry.reasons);
+  // A real action nudge always wins — driftDetected is diagnostic, not a
+  // reason to hide the (higher-priority) advisory the user already has.
+  return (
+    nudgeMessageFor(entry.action, entry.reasons) || (entry.driftDetected ? driftWarningFor() : null)
+  );
 }
 
 function readStdin() {

@@ -22,7 +22,19 @@ function nudgeMessageFor(action, reasons) {
   return buildMessage ? buildMessage(reasons.join('; ')) : null;
 }
 
+// Distinct from nudgeMessageFor because drift
+// can fire alongside CONTINUE — the exact case decide() itself can't see,
+// since a renamed usage field makes contextUsedTokens silently stay 0.
+function driftWarningFor() {
+  return (
+    '[warden] Parsed many transcript lines but found zero usable token-usage ' +
+    "entries. This harness's transcript format may have changed, and warden's " +
+    'token accounting could be silently wrong for this session.'
+  );
+}
+
 module.exports = {
   MESSAGE_BY_ACTION,
   nudgeMessageFor,
+  driftWarningFor,
 };

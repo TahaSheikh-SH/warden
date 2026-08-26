@@ -9,10 +9,11 @@ const fs = require('fs');
 const {
   reduceTranscriptEntries,
   isContextUsageTrustworthy,
+  isFormatDriftDetected,
 } = require('../../core/resourceStateCore');
 const { streamNormalizedEntries } = require('./transcript');
 const { decide, ACTIONS } = require('../../decide');
-const { nudgeMessageFor } = require('../../actuators/messages');
+const { nudgeMessageFor, driftWarningFor } = require('../../actuators/messages');
 const { logDecision } = require('../../actuators/logStore');
 const {
   getLastNudgedAction,
@@ -46,9 +47,11 @@ function computeEffectiveDecision(decision, sessionFilePath, logFilePath) {
 }
 
 // Advisory for COMPACT/CHECKPOINT/HANDOFF; STOP uses this harness's hard-stop
-// lever instead.
-function respondFor(action, reasons) {
-  const message = nudgeMessageFor(action, reasons);
+// lever instead. driftDetected mirrors native.js's respondFor: CONTINUE has
+// no nudge text at all, which is exactly the case a renamed usage field
+// silently falls into.
+function respondFor(action, reasons, driftDetected) {
+  const message = nudgeMessageFor(action, reasons) || (driftDetected ? driftWarningFor() : null);
   if (!message) return null;
 
   if (action === ACTIONS.STOP) {
@@ -68,11 +71,14 @@ function respondFor(action, reasons) {
 }
 
 async function evaluateCodexSession(sessionFilePath, { contextWindowTokens, maxLines } = {}) {
-  const entries = streamNormalizedEntries(sessionFilePath, { maxLines });
-  const state = {
-    ...(await reduceTranscriptEntries(entries, { contextWindowTokens })),
-    sessionFilePath,
-  };
+  const progress = { lineCount: 0 };
+  const entries = streamNormalizedEntries(sessionFilePath, { maxLines, progress });
+  const reduced = await reduceTranscriptEntries(entries, { contextWindowTokens });
+  const driftDetected = isFormatDriftDetected({
+    lineCount: progress.lineCount,
+    assistantUsageCount: reduced.assistantUsageCount,
+  });
+  const state = { ...reduced, sessionFilePath, driftDetected };
   // Unknown or too-small window — refuse to act, same as native.js/cli.js.
   if (!isContextUsageTrustworthy(state)) {
     return { state, decision: null };
@@ -120,7 +126,7 @@ async function main() {
     alreadyNudgedThisAction &&
     !notifyingHumanThisTurn
       ? null
-      : respondFor(effectiveDecision.action, effectiveDecision.reasons);
+      : respondFor(effectiveDecision.action, effectiveDecision.reasons, state.driftDetected);
   if (output) {
     const { stderr, ...stdoutPayload } = output;
     process.stdout.write(JSON.stringify(stdoutPayload));

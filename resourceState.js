@@ -13,6 +13,7 @@ const {
   finalizeAccumulator,
   initialAccumulator,
   isContextUsageTrustworthy,
+  isFormatDriftDetected,
 } = require('./core/resourceStateCore');
 const {
   validateTranscriptEntry,
@@ -105,7 +106,12 @@ async function buildResourceState(sessionFilePath, opts = {}) {
     contextWindowTokens: resolvedWindow || undefined,
   });
 
-  return { ...state, sessionFilePath, contextWindowSource: resolvedSource };
+  const driftDetected = isFormatDriftDetected({
+    lineCount: progress.lineCount,
+    assistantUsageCount: state.assistantUsageCount,
+  });
+
+  return { ...state, sessionFilePath, contextWindowSource: resolvedSource, driftDetected };
 }
 
 // Returns null decision when usage can't be trusted — caller decides how

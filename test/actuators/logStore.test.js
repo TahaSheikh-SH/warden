@@ -13,6 +13,7 @@ const {
   latestLogFile,
   appendLogEntry,
   readLogLines,
+  logDecision,
 } = require('../../actuators/logStore');
 
 describe('sessionLogFile', () => {
@@ -126,6 +127,57 @@ describe('appendLogEntry default path', () => {
       appendLogEntry({ sessionKey: 'irrelevant', action: 'CONTINUE' }, logFilePath);
       const lines = readLogLines(logFilePath).filter(Boolean);
       assert.equal(lines.length, 1);
+    } finally {
+      fs.rmSync(logFilePath, { force: true });
+    }
+  });
+});
+
+// logDecision is the one shared write path every harness actuator uses, so
+// this is where a drift signal must surface to reach all four — not just
+// the strongest display channel (AGENTS.md).
+describe('logDecision drift fields', () => {
+  function tempLogFilePath() {
+    return path.join(os.tmpdir(), `warden-logstore-drift-test-${process.hrtime.bigint()}.jsonl`);
+  }
+
+  test('carries state.harnessVersion and state.driftDetected through to the logged entry', () => {
+    const logFilePath = tempLogFilePath();
+    try {
+      logDecision({
+        harness: 'claude-code',
+        decision: { action: 'CONTINUE', reasons: ['within thresholds'] },
+        state: {
+          contextUsedPct: 0.1,
+          contextWindowSource: 'detected',
+          compactionCount: 0,
+          sessionAgeMinutes: 1,
+          harnessVersion: '2.1.239',
+          driftDetected: true,
+        },
+        sessionKey: 'session-a',
+        logFilePath,
+      });
+      const entry = JSON.parse(readLogLines(logFilePath).filter(Boolean)[0]);
+      assert.equal(entry.harnessVersion, '2.1.239');
+      assert.equal(entry.driftDetected, true);
+    } finally {
+      fs.rmSync(logFilePath, { force: true });
+    }
+  });
+
+  test('omits harnessVersion/driftDetected rather than writing null/false noise when state lacks them', () => {
+    const logFilePath = tempLogFilePath();
+    try {
+      logDecision({
+        decision: { action: 'CONTINUE', reasons: ['within thresholds'] },
+        state: { contextUsedPct: 0.1, compactionCount: 0, sessionAgeMinutes: 1 },
+        sessionKey: 'session-a',
+        logFilePath,
+      });
+      const entry = JSON.parse(readLogLines(logFilePath).filter(Boolean)[0]);
+      assert.equal('harnessVersion' in entry, false);
+      assert.equal('driftDetected' in entry, false);
     } finally {
       fs.rmSync(logFilePath, { force: true });
     }

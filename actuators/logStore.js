@@ -59,6 +59,10 @@ function logDecision({ harness, decision, state, sessionKey, logFilePath }) {
       contextWindowSource: state.contextWindowSource,
       compactionCount: state.compactionCount,
       sessionAgeMinutes: state.sessionAgeMinutes,
+      // Undefined for harnesses/states that
+      // don't set these, which JSON.stringify drops — harmless no-op there.
+      harnessVersion: state.harnessVersion ?? undefined,
+      driftDetected: state.driftDetected || undefined,
     },
     logFilePath,
   );
