@@ -14,9 +14,13 @@ const {
 } = require('./escalationPolicy');
 
 // JSON.stringify escapes JS string syntax, not AppleScript's — need our own
-// escaping so a raw '"' or backslash can't break out of the literal.
+// escaping so a raw '"' or backslash can't break out of the literal. A raw
+// newline is also a syntax error inside an osascript -e string literal.
 function escapeForAppleScript(text) {
-  return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r\n|\r|\n/g, ' ');
 }
 
 // Best-effort, never throws/blocks. Platform coverage is partial (no
@@ -36,7 +40,9 @@ function notifyHuman(message, { execFileFn = execFile } = {}) {
       args = ['warden', message];
     } else if (process.platform === 'win32') {
       cmd = 'msg';
-      args = ['*', `warden: ${message}`];
+      // execFile bypasses the shell, so %USERNAME% wouldn't expand — read it
+      // from the environment directly. '*' (all sessions) only as a fallback.
+      args = [process.env.USERNAME || '*', `warden: ${message}`];
     }
 
     if (!cmd) {
@@ -71,16 +77,17 @@ function maybeNotifyHuman(
   logFilePath = sessionLogFile(sessionKey),
   opts = {},
 ) {
-  if (process.env.WARDEN_NOTIFY !== '1') return;
-  if (!shouldNotifyHuman(effectiveDecision.action, sessionKey, logFilePath)) return;
+  if (process.env.WARDEN_NOTIFY !== '1') return false;
+  if (!shouldNotifyHuman(effectiveDecision.action, sessionKey, logFilePath)) return false;
 
   const count = countTrailingAction(effectiveDecision.action, sessionKey, logFilePath);
   const message = ACTION_MESSAGES[effectiveDecision.action] || effectiveDecision.action;
   notifyHuman(message, opts);
   markMilestoneNotified(
     notifyMarkerFile(logFilePath, effectiveDecision.action),
-    highestReachedMilestone(count),
+    highestReachedMilestone(count, effectiveDecision.action),
   );
+  return true;
 }
 
 module.exports = {

@@ -52,7 +52,7 @@ describe('format-drift detection', () => {
     }
   });
 
-  test('does not fire below the line-count threshold', async () => {
+  test('does not fire below the message-count threshold', async () => {
     const sessionFilePath = tempTranscriptPath();
     try {
       fs.writeFileSync(sessionFilePath, renamedUsageLine(1000) + '\n');

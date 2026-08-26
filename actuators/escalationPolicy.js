@@ -20,6 +20,11 @@ const NOTIFY_TURN_LIMIT = GRACE_TURN_LIMIT - 2;
 // gets a second chance right before STOP fires.
 const NOTIFY_MILESTONES = [NOTIFY_TURN_LIMIT, GRACE_TURN_LIMIT];
 
+// Escalation resets the trailing count, so the first STOP would otherwise wait
+// two more turns for milestone 3 — on a harness that can't block, notification
+// is the only enforcement left.
+const STOP_NOTIFY_MILESTONES = [1, GRACE_TURN_LIMIT];
+
 // Fails open (null): a broken log must never block a turn.
 function getLastNudgedAction(sessionKey, logFilePath = sessionLogFile(sessionKey)) {
   try {
@@ -117,9 +122,10 @@ function markMilestoneNotified(markerFilePath, milestone) {
 }
 
 // Highest milestone at or below `count`, or null if none reached yet.
-function highestReachedMilestone(count) {
+function highestReachedMilestone(count, action) {
+  const milestones = action === ACTIONS.STOP ? STOP_NOTIFY_MILESTONES : NOTIFY_MILESTONES;
   let reached = null;
-  for (const milestone of NOTIFY_MILESTONES) {
+  for (const milestone of milestones) {
     if (count >= milestone) reached = milestone;
   }
   return reached;
@@ -135,9 +141,13 @@ function shouldNotifyHuman(
 ) {
   if (action === ACTIONS.CONTINUE) return false;
   const count = countTrailingAction(action, sessionKey, logFilePath);
-  const reached = highestReachedMilestone(count);
+  const reached = highestReachedMilestone(count, action);
   if (reached === null) return false;
-  return reached > readNotifiedMilestone(markerFilePath);
+  const notified = readNotifiedMilestone(markerFilePath);
+  // A count below the recorded milestone means the streak broke and re-formed,
+  // so the marker belongs to the previous streak and must not silence this one.
+  if (count < notified) return true;
+  return reached > notified;
 }
 
 // Escalates HANDOFF to STOP once GRACE_TURN_LIMIT consecutive HANDOFFs are
@@ -171,6 +181,7 @@ module.exports = {
   GRACE_TURN_LIMIT,
   NOTIFY_TURN_LIMIT,
   NOTIFY_MILESTONES,
+  STOP_NOTIFY_MILESTONES,
   getLastNudgedAction,
   countTrailingAction,
   hasEverStopped,

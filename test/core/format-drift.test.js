@@ -69,15 +69,26 @@ describe('assistantUsageCount', () => {
 // One shared rule so every file-streaming adapter (claude-code, codex, ...)
 // applies the identical threshold instead of each hand-rolling its own copy.
 describe('isFormatDriftDetected', () => {
-  test('fires once line count clears the threshold with zero usage entries ever parsed', () => {
-    assert.equal(isFormatDriftDetected({ lineCount: 21, assistantUsageCount: 0 }), true);
+  test('fires once assistant message count clears the threshold with zero usage entries ever parsed', () => {
+    assert.equal(isFormatDriftDetected({ messageCount: 4, assistantUsageCount: 0 }), true);
   });
 
-  test('does not fire below the line-count threshold', () => {
-    assert.equal(isFormatDriftDetected({ lineCount: 1, assistantUsageCount: 0 }), false);
+  test('does not fire below the message-count threshold', () => {
+    assert.equal(isFormatDriftDetected({ messageCount: 1, assistantUsageCount: 0 }), false);
   });
 
-  test('does not fire once at least one usage entry parsed, however many lines', () => {
-    assert.equal(isFormatDriftDetected({ lineCount: 1000, assistantUsageCount: 1 }), false);
+  test('does not fire once at least one usage entry parsed, however many assistant messages', () => {
+    assert.equal(isFormatDriftDetected({ messageCount: 1000, assistantUsageCount: 1 }), false);
+  });
+
+  // Regression: gating on raw line count fired on the first prompt of every
+  // session, since a real transcript carries many non-message record types
+  // (attachment/mode/last-prompt/etc.) before the first assistant entry.
+  test('100 lines with zero assistant messages is not drift', () => {
+    assert.equal(isFormatDriftDetected({ messageCount: 0, assistantUsageCount: 0 }), false);
+  });
+
+  test('4 assistant messages with no usage is drift', () => {
+    assert.equal(isFormatDriftDetected({ messageCount: 4, assistantUsageCount: 0 }), true);
   });
 });

@@ -32,17 +32,46 @@ describe('notifyHuman cross-platform command selection', () => {
     });
   });
 
-  test('uses msg on win32', () => {
+  test('uses msg on win32, targeting the running user rather than every session', () => {
     withStubbedPlatform('win32', () => {
-      const calls = [];
-      notifyHuman('windows message', {
-        execFileFn: (cmd, args, cb) => {
-          calls.push({ cmd, args });
-          cb(null);
-        },
-      });
-      assert.equal(calls[0].cmd, 'msg');
-      assert.deepEqual(calls[0].args, ['*', 'warden: windows message']);
+      const originalUsername = process.env.USERNAME;
+      process.env.USERNAME = 'alice';
+      try {
+        const calls = [];
+        notifyHuman('windows message', {
+          execFileFn: (cmd, args, cb) => {
+            calls.push({ cmd, args });
+            cb(null);
+          },
+        });
+        assert.equal(calls[0].cmd, 'msg');
+        assert.deepEqual(calls[0].args, ['alice', 'warden: windows message']);
+      } finally {
+        if (originalUsername === undefined) delete process.env.USERNAME;
+        else process.env.USERNAME = originalUsername;
+      }
+    });
+  });
+
+  // Regression: 'msg *' broadcasts to every logged-in session on the host,
+  // not just the one running warden.
+  test('falls back to * only when USERNAME is unset', () => {
+    withStubbedPlatform('win32', () => {
+      const originalUsername = process.env.USERNAME;
+      delete process.env.USERNAME;
+      try {
+        const calls = [];
+        notifyHuman('windows message', {
+          execFileFn: (cmd, args, cb) => {
+            calls.push({ cmd, args });
+            cb(null);
+          },
+        });
+        assert.deepEqual(calls[0].args, ['*', 'warden: windows message']);
+      } finally {
+        if (originalUsername === undefined) delete process.env.USERNAME;
+        else process.env.USERNAME = originalUsername;
+      }
     });
   });
 

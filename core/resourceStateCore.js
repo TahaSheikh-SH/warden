@@ -204,13 +204,15 @@ function isContextUsageTrustworthy(state) {
 // entries ever fold a usage object, so contextUsedTokens stays 0 and the
 // decision pipeline silently reads CONTINUE forever. One shared rule, so
 // every file-streaming adapter applies the identical threshold instead of
-// each keeping its own copy. A handful of lines with no usage yet is normal
-// session startup, not drift — this floor is well above that. Diagnostic
-// only; nothing may gate a decide() action on it.
-const FORMAT_DRIFT_LINE_THRESHOLD = 20;
+// each keeping its own copy. Gated on assistant entries (messageCount), not
+// raw line count: a real session carries many non-message record types
+// before its first assistant turn (measured 38 on Claude Code), which used
+// to false-fire this on the first prompt of every session. Diagnostic only;
+// nothing may gate a decide() action on it.
+const FORMAT_DRIFT_MESSAGE_THRESHOLD = 3;
 
-function isFormatDriftDetected({ lineCount, assistantUsageCount }) {
-  return lineCount > FORMAT_DRIFT_LINE_THRESHOLD && assistantUsageCount === 0;
+function isFormatDriftDetected({ messageCount, assistantUsageCount }) {
+  return messageCount > FORMAT_DRIFT_MESSAGE_THRESHOLD && assistantUsageCount === 0;
 }
 
 function finalizeAccumulator(accumulator, opts = {}) {

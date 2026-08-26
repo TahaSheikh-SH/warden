@@ -19,6 +19,14 @@ intentionally asymmetric because some harnesses can notify but cannot
 block. Human notification (`WARDEN_NOTIFY=1`) is opt-in and off by
 default; see README.md for trigger conditions and platform coverage.
 
+## Keep tests off the real notification path
+`notifyHuman` defaults to the real `execFile`, so a test that reaches it
+with `WARDEN_NOTIFY=1` in the environment fires actual desktop
+notifications at whoever runs `npm test`. Any test that can reach
+`maybeNotifyHuman` must either inject `notifyOpts.execFileFn` or clear
+`WARDEN_NOTIFY` at module scope — never rely on the developer's
+environment leaving it unset.
+
 ## Treat threshold changes as evidence-backed changes
 Changes to `THRESHOLDS` or `RISK_MULTIPLIER` require either a backtest
 against real transcripts or a cited source. Keep both percentage and

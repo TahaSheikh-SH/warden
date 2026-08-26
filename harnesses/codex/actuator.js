@@ -15,11 +15,7 @@ const { streamNormalizedEntries } = require('./transcript');
 const { decide, ACTIONS } = require('../../decide');
 const { nudgeMessageFor, driftWarningFor } = require('../../actuators/messages');
 const { logDecision } = require('../../actuators/logStore');
-const {
-  getLastNudgedAction,
-  escalateHandoffToStop,
-  shouldNotifyHuman,
-} = require('../../actuators/escalationPolicy');
+const { getLastNudgedAction, escalateHandoffToStop } = require('../../actuators/escalationPolicy');
 const { maybeNotifyHuman } = require('../../actuators/notify');
 const { readStdin } = require('../../actuators/hookStdin');
 
@@ -39,7 +35,7 @@ function logDecisionAndNotify(
     sessionKey: sessionFilePath,
     logFilePath,
   });
-  maybeNotifyHuman(effectiveDecision, sessionKey, logFilePath, notifyOpts);
+  return maybeNotifyHuman(effectiveDecision, sessionKey, logFilePath, notifyOpts);
 }
 
 function computeEffectiveDecision(decision, sessionFilePath, logFilePath) {
@@ -71,11 +67,10 @@ function respondFor(action, reasons, driftDetected) {
 }
 
 async function evaluateCodexSession(sessionFilePath, { contextWindowTokens, maxLines } = {}) {
-  const progress = { lineCount: 0 };
-  const entries = streamNormalizedEntries(sessionFilePath, { maxLines, progress });
+  const entries = streamNormalizedEntries(sessionFilePath, { maxLines });
   const reduced = await reduceTranscriptEntries(entries, { contextWindowTokens });
   const driftDetected = isFormatDriftDetected({
-    lineCount: progress.lineCount,
+    messageCount: reduced.messageCount,
     assistantUsageCount: reduced.assistantUsageCount,
   });
   const state = { ...reduced, sessionFilePath, driftDetected };
@@ -114,11 +109,12 @@ async function main() {
   const alreadyNudgedThisAction = getLastNudgedAction(sessionKey) === decision.action;
   const effectiveDecision = computeEffectiveDecision(decision, sessionKey);
 
-  // Checked BEFORE logDecisionAndNotify appends this turn's entry, same
-  // ordering alreadyNudgedThisAction relies on above.
-  const notifyingHumanThisTurn = shouldNotifyHuman(effectiveDecision.action, sessionKey);
-
-  logDecisionAndNotify(effectiveDecision, state, sessionFilePath, sessionKey);
+  const notifyingHumanThisTurn = logDecisionAndNotify(
+    effectiveDecision,
+    state,
+    sessionFilePath,
+    sessionKey,
+  );
 
   const output =
     effectiveDecision.action !== ACTIONS.CONTINUE &&

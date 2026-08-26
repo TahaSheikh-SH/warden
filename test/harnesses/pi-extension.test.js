@@ -10,6 +10,10 @@ const {
   respondFor,
   WardenPiExtension,
 } = require('../../harnesses/pi/extension');
+
+// A developer with WARDEN_NOTIFY=1 exported would otherwise get real desktop
+// notifications from every test here that doesn't inject an execFileFn.
+delete process.env.WARDEN_NOTIFY;
 const { ACTIONS } = require('../../decide');
 
 describe('pi extension respondFor', () => {

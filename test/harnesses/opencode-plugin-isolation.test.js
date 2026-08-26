@@ -11,6 +11,10 @@ const os = require('os');
 const path = require('path');
 const { WardenPlugin } = require('../../harnesses/opencode/plugin');
 
+// A developer with WARDEN_NOTIFY=1 exported would otherwise get real desktop
+// notifications from every test here that doesn't inject an execFileFn.
+delete process.env.WARDEN_NOTIFY;
+
 describe('WardenPlugin cross-session isolation', () => {
   test('one heavy session does not leak its nudge, block, or token accounting into a concurrent session', async () => {
     const logFilePath = path.join(

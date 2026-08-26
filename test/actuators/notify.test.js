@@ -58,6 +58,20 @@ describe('notifyHuman', () => {
     // must not contain an unescaped quote that would close the AppleScript string early
     assert.ok(!/[^\\]"[^"]*"[^"]*"/.test(script) || script.includes('\\"'));
   });
+
+  // Regression: a raw newline inside an osascript -e string literal is a
+  // syntax error, degrading the notification to the stderr fallback.
+  test('collapses newlines in the message on darwin so the AppleScript literal stays valid', (t) => {
+    if (process.platform !== 'darwin') t.skip('darwin-only branch');
+    const calls = [];
+    notifyHuman('line one\nline two\r\nline three', {
+      execFileFn: (cmd, args) => {
+        calls.push(args);
+      },
+    });
+    const script = calls[0][1];
+    assert.ok(!/[\r\n]/.test(script));
+  });
 });
 
 describe('maybeNotifyHuman', () => {
@@ -112,6 +126,47 @@ describe('maybeNotifyHuman', () => {
     } finally {
       delete process.env.WARDEN_NOTIFY;
     }
+  });
+});
+
+// Regression: the return value used to be undefined on every path, so a caller
+// relying on it to know whether a notification actually fired this turn
+// (native.js's notifyingHumanThisTurn) always saw a falsy value.
+describe('maybeNotifyHuman return value', () => {
+  test('returns true on a notifying turn', () => {
+    process.env.WARDEN_NOTIFY = '1';
+    try {
+      const logFilePath = withTempLogFile([
+        { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
+        { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
+        { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
+      ]);
+      const result = maybeNotifyHuman(
+        { action: ACTIONS.HANDOFF, reasons: ['test'] },
+        'session-a',
+        logFilePath,
+        { execFileFn: (cmd, args, cb) => cb(null) },
+      );
+      assert.equal(result, true);
+    } finally {
+      delete process.env.WARDEN_NOTIFY;
+    }
+  });
+
+  test('returns false when WARDEN_NOTIFY is unset', () => {
+    delete process.env.WARDEN_NOTIFY;
+    const logFilePath = withTempLogFile([
+      { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
+      { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
+      { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
+    ]);
+    const result = maybeNotifyHuman(
+      { action: ACTIONS.HANDOFF, reasons: ['test'] },
+      'session-a',
+      logFilePath,
+      { execFileFn: () => {} },
+    );
+    assert.equal(result, false);
   });
 
   test('notification body is a plain-language message, not the raw action/reason', () => {

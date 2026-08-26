@@ -12,6 +12,10 @@ const os = require('os');
 const path = require('path');
 const { WardenPlugin } = require('../../harnesses/opencode/plugin');
 
+// A developer with WARDEN_NOTIFY=1 exported would otherwise get real desktop
+// notifications from every test here that doesn't inject an execFileFn.
+delete process.env.WARDEN_NOTIFY;
+
 function tempLogFilePath() {
   return path.join(os.tmpdir(), `warden-opencode-dedup-${process.hrtime.bigint()}.jsonl`);
 }

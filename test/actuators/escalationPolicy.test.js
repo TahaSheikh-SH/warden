@@ -9,6 +9,7 @@ const {
   escalateHandoffToStop,
   shouldNotifyHuman,
   GRACE_TURN_LIMIT,
+  STOP_NOTIFY_MILESTONES,
   notifyMarkerFile,
   markMilestoneNotified,
 } = require('../../actuators/escalationPolicy');
@@ -22,6 +23,10 @@ function withTempLogFile(entries) {
   const lines = entries.map((entry) => JSON.stringify(entry)).join('\n');
   if (lines) fs.writeFileSync(logFilePath, lines + '\n');
   return logFilePath;
+}
+
+function streakEntries(action, count, sessionKey = 'session-a') {
+  return Array.from({ length: count }, () => ({ sessionKey, action }));
 }
 
 describe('GRACE_TURN_LIMIT', () => {
@@ -47,12 +52,7 @@ describe('escalateHandoffToStop', () => {
   });
 
   test('escalates to STOP once GRACE_TURN_LIMIT consecutive HANDOFF entries are logged', () => {
-    const logFilePath = withTempLogFile(
-      Array.from({ length: GRACE_TURN_LIMIT }, () => ({
-        sessionKey: 'session-a',
-        action: ACTIONS.HANDOFF,
-      })),
-    );
+    const logFilePath = withTempLogFile(streakEntries(ACTIONS.HANDOFF, GRACE_TURN_LIMIT));
     const decision = { action: ACTIONS.HANDOFF, reasons: ['handoff reason'] };
     const result = escalateHandoffToStop(decision, 'session-a', logFilePath);
     assert.equal(result.action, ACTIONS.STOP);
@@ -120,12 +120,7 @@ describe('shouldNotifyHuman', () => {
   });
 
   test('true again at GRACE_TURN_LIMIT (second and final re-fire, matches the STOP escalation point)', () => {
-    const logFilePath = withTempLogFile(
-      Array.from({ length: GRACE_TURN_LIMIT }, () => ({
-        sessionKey: 'session-a',
-        action: ACTIONS.HANDOFF,
-      })),
-    );
+    const logFilePath = withTempLogFile(streakEntries(ACTIONS.HANDOFF, GRACE_TURN_LIMIT));
     assert.equal(shouldNotifyHuman(ACTIONS.HANDOFF, 'session-a', logFilePath), true);
   });
 
@@ -138,20 +133,10 @@ describe('shouldNotifyHuman', () => {
   // milestone (milestone 5 reached and never notified), but false once the
   // marker records that milestone as already notified.
   test('true once a count has passed an unnotified milestone, even without hitting it exactly', () => {
-    const between = withTempLogFile([
-      { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
-      { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
-      { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
-      { sessionKey: 'session-a', action: ACTIONS.HANDOFF },
-    ]);
+    const between = withTempLogFile(streakEntries(ACTIONS.HANDOFF, 4));
     assert.equal(shouldNotifyHuman(ACTIONS.HANDOFF, 'session-a', between), true);
 
-    const past = withTempLogFile(
-      Array.from({ length: GRACE_TURN_LIMIT + 1 }, () => ({
-        sessionKey: 'session-a',
-        action: ACTIONS.HANDOFF,
-      })),
-    );
+    const past = withTempLogFile(streakEntries(ACTIONS.HANDOFF, GRACE_TURN_LIMIT + 1));
     assert.equal(shouldNotifyHuman(ACTIONS.HANDOFF, 'session-a', past), true);
   });
 
@@ -198,5 +183,51 @@ describe('shouldNotifyHuman', () => {
     markMilestoneNotified(notifyMarkerFile(logFilePath, ACTIONS.COMPACT), 5);
 
     assert.equal(shouldNotifyHuman(ACTIONS.HANDOFF, 'session-a', logFilePath), true);
+  });
+
+  // Regression: the marker is a monotonic high-water mark, so a streak that
+  // reached milestone 5 used to permanently block re-notifying a later
+  // streak of the same action that only climbs back to 3.
+  test('re-notifies a later streak of the same action after an intervening break, even below the old high-water mark', () => {
+    const logFilePath = withTempLogFile([
+      ...streakEntries(ACTIONS.COMPACT, 5),
+      { sessionKey: 'session-a', action: ACTIONS.CONTINUE },
+      ...streakEntries(ACTIONS.COMPACT, 3),
+    ]);
+    markMilestoneNotified(notifyMarkerFile(logFilePath, ACTIONS.COMPACT), 5);
+
+    assert.equal(shouldNotifyHuman(ACTIONS.COMPACT, 'session-a', logFilePath), true);
+  });
+
+  // The stale-marker path must not outrank the milestone check: a re-formed
+  // streak still has to reach a milestone before it notifies.
+  test('a re-formed streak below the first milestone stays silent', () => {
+    const logFilePath = withTempLogFile([
+      ...streakEntries(ACTIONS.COMPACT, 5),
+      { sessionKey: 'session-a', action: ACTIONS.CONTINUE },
+      { sessionKey: 'session-a', action: ACTIONS.COMPACT },
+    ]);
+    markMilestoneNotified(notifyMarkerFile(logFilePath, ACTIONS.COMPACT), 5);
+
+    assert.equal(shouldNotifyHuman(ACTIONS.COMPACT, 'session-a', logFilePath), false);
+  });
+});
+
+describe('STOP notification milestones', () => {
+  test('STOP_NOTIFY_MILESTONES is [1, GRACE_TURN_LIMIT]', () => {
+    assert.deepEqual(STOP_NOTIFY_MILESTONES, [1, GRACE_TURN_LIMIT]);
+  });
+
+  // Fix 3: STOP's trailing count resets on escalation, so the un-gated
+  // NOTIFY_MILESTONES (3, 5) left the human unnotified for two turns after
+  // the first STOP — the only enforcement channel on a harness that can't block.
+  test('the first STOP entry for a session notifies immediately', () => {
+    const logFilePath = withTempLogFile([{ sessionKey: 'session-a', action: ACTIONS.STOP }]);
+    assert.equal(shouldNotifyHuman(ACTIONS.STOP, 'session-a', logFilePath), true);
+  });
+
+  test('milestone 1 is STOP-only: a first HANDOFF still stays silent', () => {
+    const logFilePath = withTempLogFile([{ sessionKey: 'session-a', action: ACTIONS.HANDOFF }]);
+    assert.equal(shouldNotifyHuman(ACTIONS.HANDOFF, 'session-a', logFilePath), false);
   });
 });

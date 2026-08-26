@@ -11,11 +11,7 @@ const { evaluateSession } = require('../resourceState');
 const { ACTIONS } = require('../decide');
 const { LOG_FILE, logDecision } = require('./logStore');
 const { nudgeMessageFor, driftWarningFor } = require('./messages');
-const {
-  getLastNudgedAction,
-  escalateHandoffToStop,
-  shouldNotifyHuman,
-} = require('./escalationPolicy');
+const { getLastNudgedAction, escalateHandoffToStop } = require('./escalationPolicy');
 const { maybeNotifyHuman } = require('./notify');
 const { readStdin } = require('./hookStdin');
 
@@ -35,7 +31,7 @@ function logDecisionAndNotify(
   logFilePath,
 ) {
   logDecision({ decision: effectiveDecision, state, sessionKey: sessionFilePath, logFilePath });
-  maybeNotifyHuman(effectiveDecision, sessionKey, logFilePath, notifyOpts);
+  return maybeNotifyHuman(effectiveDecision, sessionKey, logFilePath, notifyOpts);
 }
 
 // All actions, including STOP, stay advisory on Claude Code: exit code 2 on
@@ -94,11 +90,12 @@ async function main() {
   const alreadyNudgedThisAction = getLastNudgedAction(sessionKey) === decision.action;
   const effectiveDecision = computeEffectiveDecision(decision, sessionKey);
 
-  // Must check before logDecisionAndNotify appends this turn's entry —
-  // same ordering alreadyNudgedThisAction relies on above.
-  const notifyingHumanThisTurn = shouldNotifyHuman(effectiveDecision.action, sessionKey);
-
-  logDecisionAndNotify(effectiveDecision, state, sessionFilePath, sessionKey);
+  const notifyingHumanThisTurn = logDecisionAndNotify(
+    effectiveDecision,
+    state,
+    sessionFilePath,
+    sessionKey,
+  );
 
   const { exitCode, output, stderr } =
     effectiveDecision.action === ACTIONS.STOP

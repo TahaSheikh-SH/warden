@@ -120,7 +120,7 @@ async function buildResourceState(sessionFilePath, opts = {}) {
   });
 
   const driftDetected = isFormatDriftDetected({
-    lineCount: progress.lineCount,
+    messageCount: state.messageCount,
     assistantUsageCount: state.assistantUsageCount,
   });
 

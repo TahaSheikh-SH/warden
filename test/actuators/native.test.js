@@ -155,6 +155,58 @@ describe('logDecisionAndNotify', () => {
   });
 });
 
+// Regression: notifyingHumanThisTurn used to come from a shouldNotifyHuman
+// call made BEFORE this turn's log entry was appended, one turn behind
+// maybeNotifyHuman's own count-after-append — so on the exact turn the
+// notification fired, the suppression guard below still thought no
+// notification had fired and suppressed the nudge text too.
+describe('notification suppression ordering', () => {
+  test('nudge text is not suppressed on the turn a repeated-action notification fires', () => {
+    const logFilePath = path.join(
+      os.tmpdir(),
+      `warden-native-suppression-test-${process.hrtime.bigint()}.jsonl`,
+    );
+    process.env.WARDEN_NOTIFY = '1';
+    try {
+      const sessionKey = `/transcripts/suppression-${process.hrtime.bigint()}.jsonl`;
+      // Two prior HANDOFF entries: getLastNudgedAction already equals
+      // HANDOFF (alreadyNudgedThisAction), and this call's own append lands
+      // the trailing count exactly on NOTIFY_TURN_LIMIT (3).
+      const entries = Array.from({ length: 2 }, () => ({ sessionKey, action: ACTIONS.HANDOFF }));
+      fs.writeFileSync(logFilePath, entries.map((e) => JSON.stringify(e) + '\n').join(''));
+
+      const decision = { action: ACTIONS.HANDOFF, reasons: ['handoff ignored'] };
+      const alreadyNudgedThisAction =
+        getLastNudgedAction(sessionKey, logFilePath) === decision.action;
+      assert.equal(alreadyNudgedThisAction, true);
+
+      const state = { contextUsedPct: 0.5, compactionCount: 0, sessionAgeMinutes: 1 };
+      const notifyingHumanThisTurn = logDecisionAndNotify(
+        decision,
+        state,
+        sessionKey,
+        sessionKey,
+        { execFileFn: (cmd, args, cb) => cb(null) },
+        logFilePath,
+      );
+      assert.equal(notifyingHumanThisTurn, true);
+
+      // Mirrors main()'s suppression expression.
+      const suppressed =
+        decision.action !== ACTIONS.CONTINUE && alreadyNudgedThisAction && !notifyingHumanThisTurn;
+      assert.equal(suppressed, false);
+
+      const { output } = suppressed
+        ? { output: null }
+        : respondFor(decision.action, decision.reasons, false);
+      assert.ok(output && output.systemMessage);
+    } finally {
+      delete process.env.WARDEN_NOTIFY;
+      if (fs.existsSync(logFilePath)) fs.unlinkSync(logFilePath);
+    }
+  });
+});
+
 describe('computeEffectiveDecision', () => {
   test('wires the transcript path through as the escalation sessionKey', () => {
     const logFilePath = path.join(
