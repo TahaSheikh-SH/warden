@@ -30,11 +30,25 @@ harness-specific behavior to the core to accommodate one harness. A new
 harness should add an adapter rather than modify the shared core.
 
 ## Read context limits from the harness/model
-Use the actual context window from the harness or model. Do not
-reintroduce an assumed default: a window guessed too large is silent,
-since `isContextUsageTrustworthy` can only catch one that's too small.
-When nothing resolves, report the window as unknown and let percentage
-rules stand down; the absolute-token floors still apply.
+Resolve the context window through `resolveContextWindow`
+(`harnesses/claude-code/contextWindow.js`): explicit override, then
+harness-reported/settings window, then the per-model table, then
+`unknown`. Do not reintroduce an assumed default outside this chain: a
+window guessed too large is silent, since `isContextUsageTrustworthy` can
+only catch one that's too small. When nothing resolves, report the window
+as unknown and let percentage rules stand down; the absolute-token floors
+still apply.
+
+## Gate B — what a decide.js rule may read
+Before a signal backs a rule in `decide.js`, classify it against every
+harness: **passes** (same concept, measurable everywhere — use directly),
+**degrades** (real concept, some harnesses can't measure it — normalize
+the missing case to `null` and let the rule stand down, same pattern as an
+unknown context window), or **fails** (the concept doesn't exist on some
+harness — enrichment stays adapter-local; no `decide.js` rule may read it).
+Shared-infrastructure changes that never touch `decide.js` or
+`core/resourceStateCore.js` (e.g. caching, I/O performance) aren't
+signals and this gate doesn't apply to them.
 
 ## Avoid new runtime dependencies
 Prefer the existing lightweight runtime and test/tooling stack. Add a

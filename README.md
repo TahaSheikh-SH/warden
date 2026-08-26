@@ -110,11 +110,17 @@ instead:
 node /path/to/warden/actuators/statusline.js
 ```
 
-Not session-scoped — shows the latest logged decision across all warden
-sessions, not just the current one. Codex has no equivalent mechanism
-today (no command-backed status line, no way to write into its own
-terminal output from a hook); `WARDEN_NOTIFY=1` remains the only option
-there.
+Session-scoped since `87d37b4` — shows the latest logged decision for the
+current session only, reading from that session's own per-session log file.
+Codex has no equivalent mechanism today (no command-backed status line, no
+way to write into its own terminal output from a hook); `WARDEN_NOTIFY=1`
+remains the only option there.
+
+Why this exists at all: agents can't reliably predict their own token cost
+([Bai et al. 2026](https://arxiv.org/abs/2604.22750) — self-prediction
+correlations up to 0.39, systematic underestimation across all models
+tested), and that paper's proposed remedy is external budget alerts — which
+is what this status line, and warden more generally, is.
 
 ### Why these thresholds
 
