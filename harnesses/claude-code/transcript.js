@@ -81,12 +81,12 @@ function compactionOf(entry) {
   };
 }
 
-// Task 12: tool_use blocks in the transcript, preferred over the
-// PostToolUse hook per plan.md — the hook adds a fifth setup registration
-// and a live event-stream source that has to be kept in sync with the
-// transcript walk Task 10 already pays for. targetPath is read from the
-// common single-file-argument field name across Read/Edit/Write/
-// NotebookEdit; tools with no single file target (e.g. Bash) get null.
+// Reads tool_use blocks from the transcript, preferred over a PostToolUse
+// hook — the hook would add a fifth setup registration and a live
+// event-stream source that has to stay in sync with the transcript walk
+// already happening here. targetPath is read from the common
+// single-file-argument field name across Read/Edit/Write/NotebookEdit;
+// tools with no single file target (e.g. Bash) get null.
 function toolCallsOf(entry) {
   const content = entry.message && entry.message.content;
   if (entry.type !== 'assistant' || !Array.isArray(content)) return [];

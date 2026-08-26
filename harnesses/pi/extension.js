@@ -26,9 +26,9 @@ function createSessionTracker({ logFilePath } = {}) {
   let compactionCount = 0;
   let recentTurnTokens = [];
   let turnsSinceLastCompaction = 0;
-  // Task 12: same bounded window as the core reducer, tracked live here since
-  // Pi's tracker doesn't replay a transcript. Not reset on compaction —
-  // matches core/resourceStateCore.js's applyToolCalls.
+  // Same bounded window as the core reducer, tracked live here since Pi's
+  // tracker doesn't replay a transcript. Not reset on compaction — matches
+  // core/resourceStateCore.js's applyToolCalls.
   let recentToolCalls = [];
 
   return {
@@ -77,10 +77,10 @@ function createSessionTracker({ logFilePath } = {}) {
   };
 }
 
-// Task 12: read/edit/write tools take a single `path` field (readSchema/
-// editSchema/writeSchema in @earendil-works/pi-coding-agent's core/tools),
-// with `file_path` seen as an alternate key on some tool builds. bash/grep/
-// find/ls and custom tools have no single-file target, so this is null there.
+// read/edit/write tools take a single `path` field (readSchema/editSchema/
+// writeSchema in @earendil-works/pi-coding-agent's core/tools), with
+// `file_path` seen as an alternate key on some tool builds. bash/grep/find/
+// ls and custom tools have no single-file target, so this is null there.
 function targetPathFromToolInput(input) {
   if (!input || typeof input !== 'object') return null;
   return input.path || input.file_path || null;

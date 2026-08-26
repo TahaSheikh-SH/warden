@@ -82,10 +82,10 @@ function createSessionEvaluator({ contextWindowTokens, client, logFilePath } = {
       const decision = decide(state);
       return { state, decision, sessionKey };
     },
-    // Task 12: tool.execute.before fires before the event stream normally
-    // sees this turn's tool call (message.updated lands after execution), so
-    // it's recorded as its own synthetic entry rather than waiting for the
-    // next event to fold it in.
+    // tool.execute.before fires before the event stream normally sees this
+    // turn's tool call (message.updated lands after execution), so it's
+    // recorded as its own synthetic entry rather than waiting for the next
+    // event to fold it in.
     recordToolCall(sessionKey, toolCall) {
       if (!entriesBySession.has(sessionKey)) entriesBySession.set(sessionKey, []);
       entriesBySession.get(sessionKey).push({

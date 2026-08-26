@@ -66,9 +66,9 @@ function pathFromPatchInput(input) {
   return match ? match[1].trim() : null;
 }
 
-// Task 12/13: response_item was previously unhandled, so every Codex tool
-// call was discarded (reference/harness-capability-matrix.md). function_call
-// carries a JSON `arguments` string whose shape is tool-specific — only
+// response_item was previously unhandled, so every Codex tool call was
+// discarded. function_call carries a JSON `arguments` string whose shape
+// is tool-specific — only
 // pull a path out when one of the common argument names is present, else
 // null (e.g. exec_command has none). custom_tool_call (apply_patch) carries
 // no such field; its path lives in the patch header instead.

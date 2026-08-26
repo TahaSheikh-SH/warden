@@ -29,18 +29,16 @@
 //       Codex's per-turn model_context_window; used when the caller doesn't
 //       override)
 //     toolCalls: Array<{toolName: string, targetPath: string | null}>
-//       (optional, defaults to none — Task 12: tool-call identity, available
-//       on all four harnesses per reference/harness-capability-matrix.md.
-//       targetPath is null when a tool call has no single file target, e.g.
-//       Bash.)
+//       (optional, defaults to none — tool-call identity, available on all
+//       four harnesses. targetPath is null when a tool call has no single
+//       file target, e.g. Bash.)
 //   }
 
 const GROWTH_WINDOW_TURNS = 5;
 
-// Task 12: bounded trailing window of tool calls, same shape as
-// recentTurnTokens. Not reset on compaction — Task 14's crossBoundaryReReads
-// signal needs visibility across the boundary, unlike token growth which
-// genuinely resets.
+// Bounded trailing window of tool calls, same shape as recentTurnTokens.
+// Not reset on compaction — cross-boundary signals need visibility across
+// the boundary, unlike token growth which genuinely resets.
 const TOOL_CALL_WINDOW = 20;
 
 // Shared with harnesses/pi/extension.js, which tracks growth live instead of
@@ -93,10 +91,10 @@ function initialAccumulator() {
     recentTurnTokens: [],
     turnsSinceLastCompaction: 0,
     recentToolCalls: [],
-    // Task 14: consecutive turns where a cache write happened with no cache
-    // read at all. Resets on any turn that reads the cache, or reports null
-    // (Codex) — a harness that can't measure a write can't confirm a thrash
-    // turn either, so it must not extend a streak measured on other harnesses.
+    // Consecutive turns where a cache write happened with no cache read at
+    // all. Resets on any turn that reads the cache, or reports null (Codex)
+    // — a harness that can't measure a write can't confirm a thrash turn
+    // either, so it must not extend a streak measured on other harnesses.
     consecutiveCacheThrashTurns: 0,
   };
 }
