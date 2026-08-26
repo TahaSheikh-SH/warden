@@ -18,6 +18,10 @@ const {
   validateTranscriptEntry,
   streamNormalizedEntries,
 } = require('./harnesses/claude-code/transcript');
+const {
+  resolveContextWindow,
+  readAutoCompactWindowFromSettings,
+} = require('./harnesses/claude-code/contextWindow');
 const { decide } = require('./decide');
 
 // Hook adapters spawn a fresh process per turn, so the accumulator is
@@ -82,21 +86,26 @@ async function buildResourceState(sessionFilePath, opts = {}) {
     });
   }
 
-  // Pass the override through unset: pre-resolving a default here made
-  // opts.contextWindowTokens always truthy in finalizeAccumulator, so the
-  // window detected from message.model was never consulted.
-  const state = finalizeAccumulator(accumulator, {
-    contextWindowTokens: opts.contextWindowTokens,
+  // autoCompactWindow (settings/env) can cap the model-table window lower —
+  // Task 1: a window guessed too large from the model name alone is silent,
+  // since isContextUsageTrustworthy can only catch one that's too small.
+  const { tokens: resolvedWindow, source: resolvedSource } = resolveContextWindow({
+    overrideTokens: opts.contextWindowTokens,
+    baseTokens: accumulator.detectedContextWindowTokens,
+    baseSource: 'detected',
+    settingsAutoCompactWindow: readAutoCompactWindowFromSettings(opts.settingsCwd, opts.homeDir),
+    env: opts.env || process.env,
   });
 
-  // Logged so an 'unknown' window is visible rather than silent.
-  const contextWindowSource = opts.contextWindowTokens
-    ? 'override'
-    : accumulator.detectedContextWindowTokens
-      ? 'detected'
-      : 'unknown';
+  // Pass the resolved window through unset when null: pre-resolving a
+  // default here made opts.contextWindowTokens always truthy in
+  // finalizeAccumulator, so a detected-but-uncapped window was never
+  // consulted.
+  const state = finalizeAccumulator(accumulator, {
+    contextWindowTokens: resolvedWindow || undefined,
+  });
 
-  return { ...state, sessionFilePath, contextWindowSource };
+  return { ...state, sessionFilePath, contextWindowSource: resolvedSource };
 }
 
 // Returns null decision when usage can't be trusted — caller decides how

@@ -52,24 +52,10 @@ function validateTranscriptEntry(entry) {
   return { valid: errors.length === 0, errors };
 }
 
-// Claude Code reports no context window, only `message.model`, so it resolves
-// here rather than in the core (AGENTS.md). An unlisted model gives null — an
-// unknown window, not an assumed one. A test pins that the patterns stay
-// pairwise disjoint, since an overlapping addition would change matches
-// silently.
-const MODEL_CONTEXT_WINDOWS = [
-  [/^claude-(sonnet|opus)-4-[6-9]/, 1000000],
-  [/^claude-(fable|sonnet|opus)-[5-9]/, 1000000],
-  [/^claude-(sonnet|opus)-4-[0-5]/, 200000],
-  [/^claude-haiku-/, 200000],
-  [/^claude-3/, 200000],
-];
-
-function contextWindowForModel(model) {
-  if (typeof model !== 'string' || !model) return null;
-  const match = MODEL_CONTEXT_WINDOWS.find(([pattern]) => pattern.test(model));
-  return match ? match[1] : null;
-}
+// Model table and autoCompactWindow/env precedence live in contextWindow.js
+// (AGENTS.md: harness-specific resolution logic, not the shared core).
+// Re-exported below for existing importers of this module.
+const { MODEL_CONTEXT_WINDOWS, contextWindowForModel } = require('./contextWindow');
 
 // Maps a validated entry to NormalizedTranscriptEntry.
 function normalizeEntry(entry) {

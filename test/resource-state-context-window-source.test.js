@@ -26,13 +26,28 @@ function writeSession(model, inputTokens) {
   return file;
 }
 
+// Isolates a case from the developer machine's own ~/.claude/settings.json
+// (which may set a real autoCompactWindow), so these model-table-only cases
+// see no other signal, as intended.
+function isolatedOpts(overrides = {}) {
+  return {
+    settingsCwd: fs.mkdtempSync(path.join(os.tmpdir(), 'warden-window-cwd-')),
+    homeDir: fs.mkdtempSync(path.join(os.tmpdir(), 'warden-window-home-')),
+    env: {},
+    ...overrides,
+  };
+}
+
 describe('buildResourceState context window resolution', () => {
   // The regression: buildResourceState used to pre-apply the default before
   // calling finalizeAccumulator, which made opts.contextWindowTokens always
   // truthy there — so the window detected from message.model was discarded and
   // the fix only ever worked in tests that called the core reducer directly.
   test('uses the window detected from message.model, not the default', async () => {
-    const state = await buildResourceState(writeSession('claude-sonnet-4-5-20250929', 190000));
+    const state = await buildResourceState(
+      writeSession('claude-sonnet-4-5-20250929', 190000),
+      isolatedOpts(),
+    );
 
     assert.equal(state.contextWindowTokens, 200000);
     assert.equal(state.contextWindowSource, 'detected');
@@ -40,16 +55,20 @@ describe('buildResourceState context window resolution', () => {
   });
 
   test('an explicit override still wins over the detected window', async () => {
-    const state = await buildResourceState(writeSession('claude-sonnet-4-5-20250929', 190000), {
-      contextWindowTokens: 500000,
-    });
+    const state = await buildResourceState(
+      writeSession('claude-sonnet-4-5-20250929', 190000),
+      isolatedOpts({ contextWindowTokens: 500000 }),
+    );
 
     assert.equal(state.contextWindowTokens, 500000);
     assert.equal(state.contextWindowSource, 'override');
   });
 
   test('an unlisted model reports an unknown window instead of assuming one', async () => {
-    const state = await buildResourceState(writeSession('some-other-provider/model', 1000));
+    const state = await buildResourceState(
+      writeSession('some-other-provider/model', 1000),
+      isolatedOpts(),
+    );
 
     assert.equal(state.contextWindowTokens, null);
     assert.equal(state.contextWindowSource, 'unknown');
