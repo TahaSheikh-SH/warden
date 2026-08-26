@@ -111,15 +111,23 @@ function normalizeEntry(entry) {
 // Yields NormalizedTranscriptEntry objects. `opts.maxLines` replays a session
 // as it looked partway through, for backtests. `opts.startLine` skips lines a
 // caller already folded into a cached accumulator, without parsing them.
-// `opts.progress` is mutated with `{lineCount}` so that caller can persist the
-// count alongside its cache.
+// `opts.startByteOffset` skips the I/O for those lines too — `readline`
+// otherwise streams every byte from the start of the file even when
+// `startLine` means most of them are discarded unparsed. `opts.progress` is
+// mutated with `{lineCount, byteOffset}` so the caller can persist both
+// alongside its cache.
 async function* streamNormalizedEntries(sessionFilePath, opts = {}) {
   const maxLines = opts.maxLines || Infinity;
   const startLine = opts.startLine || 0;
-  let lineCount = 0;
+  const startByteOffset = opts.startByteOffset || 0;
+  // Seeded from startLine only when resuming from a byte offset: without an
+  // offset the stream reads from byte 0, so lineCount must count from 0 too
+  // for the startLine skip-parse check below to land on the right line.
+  let lineCount = startByteOffset ? startLine : 0;
+  let byteOffset = startByteOffset;
 
   const stream = readline.createInterface({
-    input: fs.createReadStream(sessionFilePath, { encoding: 'utf8' }),
+    input: fs.createReadStream(sessionFilePath, { encoding: 'utf8', start: startByteOffset }),
     crlfDelay: Infinity,
   });
 
@@ -128,6 +136,12 @@ async function* streamNormalizedEntries(sessionFilePath, opts = {}) {
       stream.close();
       break;
     }
+    // Every line consumes bytes whether or not it counts toward lineCount
+    // below (blank lines don't) — byteOffset must track the real cursor
+    // position regardless, or a resumed read starts short and re-parses
+    // lines already folded into the cached accumulator.
+    byteOffset += Buffer.byteLength(line, 'utf8') + 1;
+    if (opts.progress) opts.progress.byteOffset = byteOffset;
     if (!line.trim()) continue;
     lineCount += 1;
     if (opts.progress) opts.progress.lineCount = lineCount;

@@ -74,11 +74,17 @@ async function buildResourceState(sessionFilePath, opts = {}) {
   const useCache = !opts.maxLines;
   const cached = useCache ? readAccumulatorCache(sessionFilePath) : null;
   const accumulator = cached ? cached.accumulator : initialAccumulator();
-  const progress = { lineCount: cached ? cached.lineCount : 0 };
+  const progress = {
+    lineCount: cached ? cached.lineCount : 0,
+    // Absent on a cache written before this field existed — falls back to
+    // a full re-stream from byte 0 that self-upgrades the cache for next time.
+    byteOffset: cached ? cached.byteOffset || 0 : 0,
+  };
 
   const entries = streamNormalizedEntries(sessionFilePath, {
     maxLines: opts.maxLines,
     startLine: progress.lineCount,
+    startByteOffset: progress.byteOffset,
     progress,
   });
   for await (const entry of entries) {
@@ -88,6 +94,7 @@ async function buildResourceState(sessionFilePath, opts = {}) {
   if (useCache) {
     writeAccumulatorCache(sessionFilePath, {
       lineCount: progress.lineCount,
+      byteOffset: progress.byteOffset,
       fileSize: fs.statSync(sessionFilePath).size,
       accumulator,
     });

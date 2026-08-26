@@ -90,6 +90,41 @@ describe('buildResourceState incremental cache', () => {
     }
   });
 
+  test('resumed reads skip bytes before the cached offset instead of re-streaming them', async () => {
+    const sessionFilePath = tempTranscriptPath();
+    const cacheFilePath = cacheFileFor(sessionFilePath);
+    try {
+      fs.writeFileSync(
+        sessionFilePath,
+        [
+          assistantLine(1000, '2026-01-01T00:00:00Z'),
+          assistantLine(2000, '2026-01-01T00:01:00Z'),
+        ].join('\n') + '\n',
+      );
+      const first = await buildResourceState(sessionFilePath, { contextWindowTokens: 100000 });
+      assert.equal(first.messageCount, 2);
+
+      const cache = JSON.parse(fs.readFileSync(cacheFilePath, 'utf8'));
+      assert.equal(typeof cache.byteOffset, 'number');
+
+      // Corrupt every byte already folded into the cached accumulator, then
+      // append a new line. A resume that ignores byteOffset and re-streams
+      // from 0 hits this garbage and fails to parse anything real; a
+      // correct resume never reads past the cached offset to see it.
+      fs.writeFileSync(
+        sessionFilePath,
+        'x'.repeat(cache.byteOffset) + assistantLine(3000, '2026-01-01T00:02:00Z') + '\n',
+      );
+
+      const second = await buildResourceState(sessionFilePath, { contextWindowTokens: 100000 });
+      assert.equal(second.messageCount, 3);
+      assert.equal(second.totalInputTokens, 6000);
+    } finally {
+      fs.rmSync(sessionFilePath, { force: true });
+      fs.rmSync(cacheFilePath, { force: true });
+    }
+  });
+
   test('opts.maxLines (partial replay) never reads or writes the incremental cache', async () => {
     const sessionFilePath = tempTranscriptPath();
     const cacheFilePath = cacheFileFor(sessionFilePath);
