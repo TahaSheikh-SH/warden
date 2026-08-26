@@ -47,7 +47,7 @@ describe('notifyHuman', () => {
   });
 
   test('escapes AppleScript-significant characters in the message on darwin', (t) => {
-    if (process.platform !== 'darwin') t.skip('darwin-only branch');
+    if (process.platform !== 'darwin') return t.skip('darwin-only branch');
     const calls = [];
     notifyHuman('reason with "quotes" and \\ backslash', {
       execFileFn: (cmd, args) => {
@@ -62,7 +62,7 @@ describe('notifyHuman', () => {
   // Regression: a raw newline inside an osascript -e string literal is a
   // syntax error, degrading the notification to the stderr fallback.
   test('collapses newlines in the message on darwin so the AppleScript literal stays valid', (t) => {
-    if (process.platform !== 'darwin') t.skip('darwin-only branch');
+    if (process.platform !== 'darwin') return t.skip('darwin-only branch');
     const calls = [];
     notifyHuman('line one\nline two\r\nline three', {
       execFileFn: (cmd, args) => {
