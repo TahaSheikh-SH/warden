@@ -81,6 +81,23 @@ function compactionOf(entry) {
   };
 }
 
+// Task 12: tool_use blocks in the transcript, preferred over the
+// PostToolUse hook per plan.md — the hook adds a fifth setup registration
+// and a live event-stream source that has to be kept in sync with the
+// transcript walk Task 10 already pays for. targetPath is read from the
+// common single-file-argument field name across Read/Edit/Write/
+// NotebookEdit; tools with no single file target (e.g. Bash) get null.
+function toolCallsOf(entry) {
+  const content = entry.message && entry.message.content;
+  if (entry.type !== 'assistant' || !Array.isArray(content)) return [];
+  return content
+    .filter((block) => block && block.type === 'tool_use' && typeof block.name === 'string')
+    .map((block) => ({
+      toolName: block.name,
+      targetPath: (block.input && block.input.file_path) || null,
+    }));
+}
+
 // Maps a validated entry to NormalizedTranscriptEntry.
 function normalizeEntry(entry) {
   const { usage, model = null } = entry.message || {};
@@ -105,6 +122,7 @@ function normalizeEntry(entry) {
     // First-wins in the core reducer, so a mid-session /model switch keeps the
     // first model's window — same as Codex's per-turn model_context_window.
     detectedContextWindowTokens: contextWindowForModel(model),
+    toolCalls: toolCallsOf(entry),
   };
 }
 

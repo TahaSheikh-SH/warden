@@ -6,7 +6,11 @@
 // harnesses/pi/transcript.js is for offline backtests.
 
 const { decide, ACTIONS } = require('../../decide');
-const { computeGrowthProjection, GROWTH_WINDOW_TURNS } = require('../../core/resourceStateCore');
+const {
+  computeGrowthProjection,
+  GROWTH_WINDOW_TURNS,
+  TOOL_CALL_WINDOW,
+} = require('../../core/resourceStateCore');
 const { nudgeMessageFor } = require('../../actuators/messages');
 const { logDecision } = require('../../actuators/logStore');
 const { getLastNudgedAction, escalateHandoffToStop } = require('../../actuators/escalationPolicy');
@@ -22,10 +26,18 @@ function createSessionTracker({ logFilePath } = {}) {
   let compactionCount = 0;
   let recentTurnTokens = [];
   let turnsSinceLastCompaction = 0;
+  // Task 12: same bounded window as the core reducer, tracked live here since
+  // Pi's tracker doesn't replay a transcript. Not reset on compaction —
+  // matches core/resourceStateCore.js's applyToolCalls.
+  let recentToolCalls = [];
 
   return {
     sessionKey,
     logFilePath,
+    recordToolCall(toolName, targetPath) {
+      recentToolCalls.push({ toolName, targetPath });
+      if (recentToolCalls.length > TOOL_CALL_WINDOW) recentToolCalls.shift();
+    },
     onCompact() {
       compactionCount += 1;
       recentTurnTokens = []; // pre-compaction growth isn't representative anymore
@@ -59,9 +71,19 @@ function createSessionTracker({ logFilePath } = {}) {
         compactionCount,
         sessionAgeMinutes: (Date.now() - startedAt) / 60000,
         turnsSinceLastCompaction,
+        recentToolCalls,
       };
     },
   };
+}
+
+// Task 12: read/edit/write tools take a single `path` field (readSchema/
+// editSchema/writeSchema in @earendil-works/pi-coding-agent's core/tools),
+// with `file_path` seen as an alternate key on some tool builds. bash/grep/
+// find/ls and custom tools have no single-file target, so this is null there.
+function targetPathFromToolInput(input) {
+  if (!input || typeof input !== 'object') return null;
+  return input.path || input.file_path || null;
 }
 
 const respondFor = nudgeMessageFor;
@@ -80,7 +102,10 @@ function WardenPiExtension(pi, { logFilePath, notifyOpts = {} } = {}) {
 
   // tool_call fires BEFORE a tool executes and supports {block, terminate}
   // — terminate:true aborts the agent, not just the next call.
-  pi.on('tool_call', () => {
+  pi.on('tool_call', (event) => {
+    if (event && event.toolName) {
+      tracker.recordToolCall(event.toolName, targetPathFromToolInput(event.input));
+    }
     if (!stopBlockMessage) return undefined;
     return { block: true, terminate: true, reason: stopBlockMessage };
   });

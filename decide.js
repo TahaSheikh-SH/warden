@@ -144,6 +144,41 @@ function isLongUncompactedSession(state) {
   };
 }
 
+// Task 12: repeated file view/edit detection. Bai et al. 2026 Fig. 4 and the
+// Gemini 2.5 tech report both converge on the same signature (see plan.md
+// Task 12) — but they're a correlation and a behavioral observation, not a
+// magnitude any backtest here can pin. So this stays observation-only: it
+// strengthens the reason string on an already-firing CHECKPOINT/HANDOFF, it
+// never fires an action or a threshold of its own, and 2 is the definition
+// of "repeated" (not a tuned constant) — the lowest count the word can mean.
+const REPEATED_ACCESS_MIN_COUNT = 2;
+
+function repeatedFileAccessObservation(state) {
+  const recentToolCalls = state.recentToolCalls || [];
+  const countsByPath = new Map();
+  for (const call of recentToolCalls) {
+    if (!call || !call.targetPath) continue;
+    countsByPath.set(call.targetPath, (countsByPath.get(call.targetPath) || 0) + 1);
+  }
+
+  let topPath = null;
+  let topCount = 0;
+  for (const [path, count] of countsByPath) {
+    if (count > topCount) {
+      topPath = path;
+      topCount = count;
+    }
+  }
+
+  if (topCount < REPEATED_ACCESS_MIN_COUNT) return null;
+  return (
+    `observation: ${topPath} accessed ${topCount} times in the last ` +
+    `${recentToolCalls.length} tool calls (Bai et al. 2026 / Gemini 2.5 tech ` +
+    `report — repeated file access correlates with cost/failure; not a ` +
+    `diagnosis of why)`
+  );
+}
+
 function withinAllThresholds(state) {
   return {
     action: ACTIONS.CONTINUE,
@@ -166,16 +201,30 @@ const RULES = [
   isLongUncompactedSession,
 ];
 
+// Actions an observation is allowed to strengthen. Task 12 step 3: "keep it a
+// reason that strengthens CHECKPOINT/HANDOFF, not a new action" — the
+// existing vocabulary already covers "checkpoint and start fresh".
+const OBSERVATION_ELIGIBLE_ACTIONS = new Set([ACTIONS.CHECKPOINT, ACTIONS.HANDOFF]);
+
 // Pure: ResourceState in, {action, reasons} out. Never emits STOP — that
 // action exists for the actuator layer, which escalates ignored HANDOFFs.
 function decide(state) {
   for (const rule of RULES) {
     const match = rule(state);
-    if (match) return { action: match.action, reasons: [match.reason] };
+    if (match) return finalizeDecision(state, match.action, match.reason);
   }
 
   const fallback = withinAllThresholds(state);
-  return { action: fallback.action, reasons: [fallback.reason] };
+  return finalizeDecision(state, fallback.action, fallback.reason);
+}
+
+function finalizeDecision(state, action, reason) {
+  const reasons = [reason];
+  if (OBSERVATION_ELIGIBLE_ACTIONS.has(action)) {
+    const observation = repeatedFileAccessObservation(state);
+    if (observation) reasons.push(observation);
+  }
+  return { action, reasons };
 }
 
 module.exports = { decide, ACTIONS, THRESHOLDS };

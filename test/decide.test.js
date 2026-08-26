@@ -193,6 +193,64 @@ describe('THRESHOLDS regression — every value must match its citation', () => 
   });
 });
 
+describe('Task 12 — repeated file access observation', () => {
+  function withToolCalls(path, count, windowSize = count) {
+    const calls = [];
+    for (let i = 0; i < windowSize - count; i += 1) {
+      calls.push({ toolName: 'Read', targetPath: `other${i}.js` });
+    }
+    for (let i = 0; i < count; i += 1) {
+      calls.push({ toolName: 'Read', targetPath: path });
+    }
+    return calls;
+  }
+
+  test('CHECKPOINT reason gains an observation when a file was accessed repeatedly', () => {
+    const state = givenResourceState({
+      compactionCount: THRESHOLDS.checkpointCompactionCount,
+      recentToolCalls: withToolCalls('src/foo.js', 3),
+    });
+    const decision = decide(state);
+    assert.equal(decision.action, ACTIONS.CHECKPOINT);
+    assert.ok(decision.reasons.some((r) => r.includes('src/foo.js accessed 3 times')));
+  });
+
+  test('HANDOFF reason gains an observation when a file was accessed repeatedly', () => {
+    const state = givenResourceState({
+      contextUsedPct: THRESHOLDS.handoffContextPct,
+      recentToolCalls: withToolCalls('src/bar.js', 2),
+    });
+    const decision = decide(state);
+    assert.equal(decision.action, ACTIONS.HANDOFF);
+    assert.ok(decision.reasons.some((r) => r.includes('src/bar.js accessed 2 times')));
+  });
+
+  test('no observation appended when no file was accessed more than once', () => {
+    const state = givenResourceState({
+      compactionCount: THRESHOLDS.checkpointCompactionCount,
+      recentToolCalls: [{ toolName: 'Read', targetPath: 'a.js' }],
+    });
+    const decision = decide(state);
+    assert.equal(decision.reasons.length, 1);
+  });
+
+  test('does not strengthen COMPACT — observation only attaches to CHECKPOINT/HANDOFF', () => {
+    const state = givenResourceState({
+      contextUsedPct: THRESHOLDS.compactContextPct,
+      recentToolCalls: withToolCalls('src/foo.js', 5),
+    });
+    const decision = decide(state);
+    assert.equal(decision.action, ACTIONS.COMPACT);
+    assert.equal(decision.reasons.length, 1);
+  });
+
+  test('missing recentToolCalls does not throw', () => {
+    const state = givenResourceState({ compactionCount: THRESHOLDS.checkpointCompactionCount });
+    delete state.recentToolCalls;
+    assert.doesNotThrow(() => decide(state));
+  });
+});
+
 describe('STOP', () => {
   test('no current input path returns STOP — v0 never emits it (documents reachability, not a rule)', () => {
     const state = givenResourceState({

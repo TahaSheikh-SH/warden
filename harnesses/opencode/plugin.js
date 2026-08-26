@@ -82,7 +82,28 @@ function createSessionEvaluator({ contextWindowTokens, client, logFilePath } = {
       const decision = decide(state);
       return { state, decision, sessionKey };
     },
+    // Task 12: tool.execute.before fires before the event stream normally
+    // sees this turn's tool call (message.updated lands after execution), so
+    // it's recorded as its own synthetic entry rather than waiting for the
+    // next event to fold it in.
+    recordToolCall(sessionKey, toolCall) {
+      if (!entriesBySession.has(sessionKey)) entriesBySession.set(sessionKey, []);
+      entriesBySession.get(sessionKey).push({
+        type: null,
+        timestamp: null,
+        usage: null,
+        isCompactionBoundary: false,
+        toolCalls: [toolCall],
+      });
+    },
   };
+}
+
+// tool.execute.before's `output.args` shape is tool-specific — only pull a
+// path out when one of the common single-file argument names is present.
+function targetPathFromArgs(args) {
+  if (!args || typeof args !== 'object') return null;
+  return args.filePath || args.file_path || args.path || null;
 }
 
 const respondFor = nudgeMessageFor;
@@ -180,8 +201,14 @@ async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindow
       output.system.push(pendingMessage);
       pendingMessageBySession.delete(sessionKey);
     },
-    'tool.execute.before': async (toolInput) => {
+    'tool.execute.before': async (toolInput, output) => {
       const sessionKey = (toolInput && toolInput.sessionID) || fallbackSessionKey;
+      if (toolInput && toolInput.tool) {
+        evaluator.recordToolCall(sessionKey, {
+          toolName: toolInput.tool,
+          targetPath: targetPathFromArgs(output && output.args),
+        });
+      }
       const stopBlockMessage = stopBlockMessageBySession.get(sessionKey);
       if (stopBlockMessage) throw new Error(stopBlockMessage);
     },

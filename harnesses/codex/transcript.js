@@ -57,6 +57,42 @@ function handleTurnContext(base, entry) {
   return base;
 }
 
+// apply_patch's `input` is a patch body, not JSON — the only structured
+// place a path lives is the "*** Update/Add/Delete File: <path>" header
+// line. See reference/harness-capability-matrix.md verification evidence.
+function pathFromPatchInput(input) {
+  if (typeof input !== 'string') return null;
+  const match = input.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/m);
+  return match ? match[1].trim() : null;
+}
+
+// Task 12/13: response_item was previously unhandled, so every Codex tool
+// call was discarded (reference/harness-capability-matrix.md). function_call
+// carries a JSON `arguments` string whose shape is tool-specific — only
+// pull a path out when one of the common argument names is present, else
+// null (e.g. exec_command has none). custom_tool_call (apply_patch) carries
+// no such field; its path lives in the patch header instead.
+function handleResponseItem(base, entry) {
+  const payload = entry.payload;
+  if (!payload || typeof payload.name !== 'string') return base;
+
+  if (payload.type === 'function_call') {
+    let targetPath = null;
+    if (typeof payload.arguments === 'string') {
+      try {
+        const args = JSON.parse(payload.arguments);
+        targetPath = args.file_path || args.path || args.file || null;
+      } catch {
+        targetPath = null; // arguments isn't JSON, or has no path-shaped field
+      }
+    }
+    base.toolCalls = [{ toolName: payload.name, targetPath }];
+  } else if (payload.type === 'custom_tool_call') {
+    base.toolCalls = [{ toolName: payload.name, targetPath: pathFromPatchInput(payload.input) }];
+  }
+  return base;
+}
+
 // Keyed by raw rollout entry.type. compacted/compaction/context_compacted
 // are three names seen for the same event across Codex rollout versions.
 const HANDLERS = {
@@ -66,6 +102,7 @@ const HANDLERS = {
   context_compacted: handleCompaction,
   event_msg: handleEventMsg,
   turn_context: handleTurnContext,
+  response_item: handleResponseItem,
 };
 
 function normalizeEntry(entry) {
@@ -79,6 +116,7 @@ function normalizeEntry(entry) {
     gitBranch: null,
     detectedContextWindowTokens: null,
     harnessVersion: null,
+    toolCalls: [],
   };
 
   const handler = HANDLERS[entry.type];

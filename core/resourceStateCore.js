@@ -28,9 +28,20 @@
 //       some harnesses report their real window size in-transcript, e.g.
 //       Codex's per-turn model_context_window; used when the caller doesn't
 //       override)
+//     toolCalls: Array<{toolName: string, targetPath: string | null}>
+//       (optional, defaults to none — Task 12: tool-call identity, available
+//       on all four harnesses per reference/harness-capability-matrix.md.
+//       targetPath is null when a tool call has no single file target, e.g.
+//       Bash.)
 //   }
 
 const GROWTH_WINDOW_TURNS = 5;
+
+// Task 12: bounded trailing window of tool calls, same shape as
+// recentTurnTokens. Not reset on compaction — Task 14's crossBoundaryReReads
+// signal needs visibility across the boundary, unlike token growth which
+// genuinely resets.
+const TOOL_CALL_WINDOW = 20;
 
 // Shared with harnesses/pi/extension.js, which tracks growth live instead of
 // replaying a transcript — same slope math, one implementation.
@@ -81,6 +92,7 @@ function initialAccumulator() {
     lastTurnCacheCreationTokens: null,
     recentTurnTokens: [],
     turnsSinceLastCompaction: 0,
+    recentToolCalls: [],
   };
 }
 
@@ -153,6 +165,15 @@ function applyAssistantUsage(accumulator, entry) {
   }
 }
 
+function applyToolCalls(accumulator, entry) {
+  if (!entry.toolCalls || entry.toolCalls.length === 0) return;
+  accumulator.recentToolCalls.push(...entry.toolCalls);
+  const overflow = accumulator.recentToolCalls.length - TOOL_CALL_WINDOW;
+  if (overflow > 0) {
+    accumulator.recentToolCalls.splice(0, overflow);
+  }
+}
+
 // Mutates and returns accumulator, so a caller holding one across turns can
 // fold only new entries instead of replaying the transcript (was O(n^2)).
 function foldEntry(accumulator, entry) {
@@ -161,6 +182,7 @@ function foldEntry(accumulator, entry) {
   applyTimestamp(accumulator, entry);
   applyCompactionBoundary(accumulator, entry);
   applyAssistantUsage(accumulator, entry);
+  applyToolCalls(accumulator, entry);
   return accumulator;
 }
 
@@ -228,6 +250,7 @@ function finalizeAccumulator(accumulator, opts = {}) {
     turnsSinceLastCompaction: accumulator.turnsSinceLastCompaction,
     messageCount: accumulator.messageCount,
     assistantUsageCount: accumulator.assistantUsageCount,
+    recentToolCalls: accumulator.recentToolCalls,
   };
 }
 
@@ -250,4 +273,5 @@ module.exports = {
   isContextUsageTrustworthy,
   isFormatDriftDetected,
   GROWTH_WINDOW_TURNS,
+  TOOL_CALL_WINDOW,
 };
