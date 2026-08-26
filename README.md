@@ -109,20 +109,27 @@ there.
 
 | Threshold | Value | Source |
 |---|---|---|
-| `compactContextTokens` | 100,000 | [Context Rot](https://trychroma.com/research/context-rot) (Chroma) — accuracy degrades past ~50-60k tokens |
-| `handoffContextTokens` | 200,000 | [Agent-loop token cost](https://www.augmentcode.com/guides/ai-agent-loop-token-cost-context-constraints) (Augment Code) — planning drift past 200k |
+| `compactContextTokens` | 100,000 | Anthropic's `clear_tool_uses_20250919` default `trigger` (vendor, primary) — corroborated by the [Gemini 2.5 technical report](https://arxiv.org/abs/2507.06261) (agents favor repeating past actions over new plans beyond ~100k tokens) and [LOCA-bench](https://arxiv.org/abs/2602.07962) (Claude-4.5-Opus accuracy 45.3 @ 96K, 34.0 @ 128K vs. 96.0 @ 8K). [Context Rot](https://trychroma.com/research/context-rot) (Chroma) supports only the general claim — long context degrades quality, non-uniformly — not this specific number. |
 | `checkpointCompactionCount` | 2 | [Codex #14589](https://github.com/openai/codex/issues/14589) — repeated compaction degrades accuracy |
-| `checkpointContextPct` | 60% | [Session lifecycle management](https://zylos.ai/research/2026-03-31-context-window-management-session-lifecycle-long-running-agents/) (Zylos) — early warning band |
-| `compactContextPct` | 80% | Same source — compact/rotate ceiling |
+| `checkpointContextPct` | 60% | [Session lifecycle management](https://zylos.ai/research/2026-03-31-context-window-management-session-lifecycle-long-running-agents/) (Zylos) — engineering guidance, not a measurement; early warning band |
+| `compactContextPct` | 70% | [Context Rot in AI Agents](https://www.mindstudio.ai/blog/context-rot-ai-agents-auto-compact-fix) (MindStudio) — engineering guidance, not peer-reviewed; degradation zone starts ~70-80% context capacity, recommends compacting at 0.7 to fire before it |
 | `handoffContextPct` | 92% | Tested — final safety margin |
 | `burnRateMinTurnsUntilOverflow`, `minPctForBurnRateTrigger` | 3 turns, 50% | Tested — catches fast-growing sessions before the static % threshold would |
 | `checkpointSessionAgeMinutes`, `activeSessionMaxIdleMinutes` | 240m, 30m | Tested — long sessions accrue risk beyond token count |
 
-Both pct and absolute-token floors exist since a percentage means different
-things on a 200k vs. 1M window — whichever trips first wins. The absolute
-floors are also the only rules that still work when the window is unknown.
-Threshold changes need a backtest (`scripts/backtest.js`) or a cited source — see
-AGENTS.md.
+There used to be a `handoffContextTokens: 200,000` absolute floor. It was
+deleted: the cited source (Augment Code) never made the claim attributed to
+it, no other source places a degradation breakpoint near 200k, and
+[LOCA-bench](https://arxiv.org/abs/2602.07962)'s accuracy curve shows 200k
+would have fired *after* quality had already collapsed — late, not
+conservative. `HANDOFF` now has only the pct floor above; a future absolute
+floor needs its own committed backtest, not a guess.
+
+The remaining pct and absolute-token floors coexist since a percentage means
+different things on a 200k vs. 1M window — whichever trips first wins. The
+absolute floor is also the only rule that still works when the window is
+unknown. Threshold changes need a backtest (`scripts/backtest.js`) or a cited
+source — see AGENTS.md.
 
 ## Layout
 

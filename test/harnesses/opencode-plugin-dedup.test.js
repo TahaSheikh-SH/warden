@@ -71,7 +71,7 @@ describe('WardenPlugin nudge dedup', () => {
     const { plugin, toasts } = await pluginWithToastLog(tempLogFilePath());
     await plugin.event(assistantEvent('msg_1', 150000)); // COMPACT floor
     await plugin.event(assistantEvent('msg_2', 160000)); // same action, suppressed
-    await plugin.event(assistantEvent('msg_3', 300000)); // HANDOFF floor
+    await plugin.event(assistantEvent('msg_3', 950000)); // HANDOFF floor (92% of 1M window)
 
     assert.equal(toasts.length, 2);
     assert.notEqual(toasts[0].body.message, toasts[1].body.message);
@@ -83,7 +83,7 @@ describe('WardenPlugin nudge dedup', () => {
     // HANDOFFs still escalate — one toast for the first HANDOFF, one for STOP,
     // and nothing for the four repeats in between.
     for (let turn = 1; turn <= 6; turn += 1) {
-      await plugin.event(assistantEvent(`msg_${turn}`, 300000 + turn));
+      await plugin.event(assistantEvent(`msg_${turn}`, 950000 + turn));
     }
 
     assert.equal(toasts.length, 2);

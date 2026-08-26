@@ -1,19 +1,37 @@
 'use strict';
 
 // Pct-of-window thresholds alone don't scale — 0.8*200k and 0.8*1M aren't
-// the same context rot. Absolute-token floors below enforce the Chroma
-// Context Rot (trychroma.com/research/context-rot) and Augment Code
-// agent-loop-cost (augmentcode.com/guides/ai-agent-loop-token-cost-context-constraints)
-// findings regardless of window size; whichever bound (pct or absolute)
-// hits first wins.
+// the same context rot. compactContextTokens below enforces that regardless
+// of window size; whichever bound (pct or absolute) hits first wins.
+//
+// Premise of the whole project — agents cannot judge their own token budget:
+// Bai et al. (arXiv:2604.22750) measured self-prediction correlations up to
+// only 0.39, with systematic underestimation, and proposes external "budget
+// alerts" as the remedy. That's warden's reason to exist.
 const THRESHOLDS = {
   handoffContextPct: 0.92,
-  compactContextPct: 0.8,
+  // 70%: MindStudio (mindstudio.ai/blog/context-rot-ai-agents-auto-compact-fix,
+  // 2026) — "degradation zone starting around 70-80% context capacity" for
+  // long-range reasoning coherence; recommends triggering auto-compact at 0.7
+  // to fire before that zone. Blog-grade, not peer-reviewed or vendor —
+  // engineering guidance, like the Zylos citation below, not a measurement.
+  compactContextPct: 0.7,
   checkpointContextPct: 0.6,
-  // 60/80% bands per Zylos Research session-lifecycle guidance
-  // (zylos.ai/research/2026-03-31-context-window-management-session-lifecycle-long-running-agents/).
+  // 60% band is Zylos Research session-lifecycle engineering guidance
+  // (zylos.ai/research/2026-03-31-context-window-management-session-lifecycle-long-running-agents/),
+  // not a peer-reviewed or vendor measurement — adequate for a pct band,
+  // not load-bearing on its own for a blocking action.
+  //
+  // compactContextTokens: Anthropic's own clear_tool_uses_20250919 default
+  // `trigger` is 100,000 input tokens (vendor, primary — see
+  // reference/claude-code-telemetry.md § 6). Corroborated by the Gemini 2.5
+  // technical report (arXiv:2507.06261): past ~100k tokens agents favor
+  // "repeating actions from its vast history rather than synthesizing novel
+  // plans"; and by LOCA-bench (arXiv:2602.07962): Claude-4.5-Opus accuracy
+  // 45.3 @ 96K / 34.0 @ 128K vs. 96.0 @ 8K baseline. Chroma Context Rot
+  // (trychroma.com/research/context-rot) supports only the general claim —
+  // long context degrades quality, non-uniformly — not this specific number.
   compactContextTokens: 100000,
-  handoffContextTokens: 200000,
   checkpointCompactionCount: 2,
   checkpointSessionAgeMinutes: 240,
   // Idle sessions aren't "aging" in the resource sense, so age only
@@ -34,18 +52,19 @@ const ACTIONS = Object.freeze({
   STOP: 'STOP',
 });
 
+// No absolute-token floor here: the prior 200,000 value had no valid
+// citation (reference/source-verification.md) and, per LOCA-bench, would
+// have fired *after* Claude's measured accuracy was already down to a third
+// of baseline — late, not conservative. Pct-of-window is what's left; a
+// future absolute floor needs its own committed backtest, not a guess.
 function exceedsHandoffThreshold(state) {
   const overPct = state.contextUsedPct >= THRESHOLDS.handoffContextPct;
-  const overAbsolute = state.contextUsedTokens >= THRESHOLDS.handoffContextTokens;
-  if (!overPct && !overAbsolute) return null;
+  if (!overPct) return null;
   return {
     action: ACTIONS.HANDOFF,
-    reason: overAbsolute
-      ? `context used ${state.contextUsedTokens.toLocaleString()} tokens >= ` +
-        `${THRESHOLDS.handoffContextTokens.toLocaleString()}-token handoff floor ` +
-        `(Augment Code, 2026 — severe planning drift/impatience loops past this point)`
-      : `context used ${(state.contextUsedPct * 100).toFixed(1)}% >= ` +
-        `${(THRESHOLDS.handoffContextPct * 100).toFixed(0)}% handoff threshold`,
+    reason:
+      `context used ${(state.contextUsedPct * 100).toFixed(1)}% >= ` +
+      `${(THRESHOLDS.handoffContextPct * 100).toFixed(0)}% handoff threshold`,
   };
 }
 
@@ -63,10 +82,12 @@ function exceedsCompactThreshold(state) {
     reason: overAbsolute
       ? `context used ${state.contextUsedTokens.toLocaleString()} tokens >= ` +
         `${THRESHOLDS.compactContextTokens.toLocaleString()}-token compact floor ` +
-        `(Chroma Context Rot, 2026 — accuracy holds only up to ~50k-60k tokens)`
+        `(Anthropic clear_tool_uses_20250919 default trigger; corroborated by ` +
+        `Gemini 2.5 tech report and LOCA-bench, 2026)`
       : `context used ${(state.contextUsedPct * 100).toFixed(1)}% >= ` +
         `${(THRESHOLDS.compactContextPct * 100).toFixed(0)}% compact threshold ` +
-        `(Zylos Research, 2026 — rotate before 80% capacity)`,
+        `(MindStudio, 2026 — engineering guidance, compact before the 70-80% ` +
+        `degradation zone)`,
   };
 }
 
@@ -97,7 +118,7 @@ function isRepeatedCompactionDegrading(state) {
       `compaction is degrading, not fixing, this session (Codex itself warns ` +
       `multiple compactions reduce accuracy — github.com/openai/codex#14589; ` +
       `${(THRESHOLDS.checkpointContextPct * 100).toFixed(0)}% checkpoint band ` +
-      `per Zylos Research, 2026 early-warning guidance)`,
+      `per Zylos Research, 2026 engineering guidance, not a measurement)`,
   };
 }
 

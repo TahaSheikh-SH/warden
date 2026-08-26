@@ -27,7 +27,9 @@ describe('WardenPlugin cross-session isolation', () => {
             id: messageId,
             role: 'assistant',
             sessionID: 'ses_heavy',
-            tokens: { input: 300000, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
+            // 95% of the 1,000,000-token window — above handoffContextPct (0.92)
+            // since Task 3 deleted the handoffContextTokens absolute floor.
+            tokens: { input: 950000, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
           },
         },
       },

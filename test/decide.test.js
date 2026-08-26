@@ -44,22 +44,17 @@ describe('HANDOFF', () => {
     assert.equal(decision.action, ACTIONS.HANDOFF);
   });
 
-  test('absolute token floor fires even at low contextUsedPct (large window)', () => {
-    const state = givenResourceState({
-      contextUsedPct: 0.1,
-      contextUsedTokens: THRESHOLDS.handoffContextTokens,
-    });
-    const decision = decide(state);
-    assert.equal(decision.action, ACTIONS.HANDOFF);
-  });
-
-  test('below absolute token floor and pct threshold does not fire', () => {
-    const state = givenResourceState({
-      contextUsedPct: 0.1,
-      contextUsedTokens: THRESHOLDS.handoffContextTokens - 1,
-    });
+  // Task 3: handoffContextTokens (200000) had no valid citation and was
+  // deleted — see reference/source-verification.md. HANDOFF now has no
+  // absolute-token floor, only the pct threshold above.
+  test('no absolute token floor exists for HANDOFF — huge token count alone does not fire it', () => {
+    const state = givenResourceState({ contextUsedPct: 0.1, contextUsedTokens: 999999999 });
     const decision = decide(state);
     assert.notEqual(decision.action, ACTIONS.HANDOFF);
+  });
+
+  test('THRESHOLDS no longer defines handoffContextTokens', () => {
+    assert.equal(THRESHOLDS.handoffContextTokens, undefined);
   });
 });
 
@@ -193,6 +188,25 @@ describe('CHECKPOINT', () => {
     });
     const decision = decide(state);
     assert.notEqual(decision.action, ACTIONS.CHECKPOINT);
+  });
+});
+
+// Task 3: pins every cited threshold value so an edit to the number fails
+// loudly here rather than silently drifting from its citation in
+// reference/source-verification.md / README.md's "Why these thresholds".
+describe('THRESHOLDS regression — every value must match its citation', () => {
+  test('pinned values', () => {
+    assert.deepEqual(THRESHOLDS, {
+      handoffContextPct: 0.92,
+      compactContextPct: 0.7,
+      checkpointContextPct: 0.6,
+      compactContextTokens: 100000,
+      checkpointCompactionCount: 2,
+      checkpointSessionAgeMinutes: 240,
+      activeSessionMaxIdleMinutes: 30,
+      burnRateMinTurnsUntilOverflow: 3,
+      minPctForBurnRateTrigger: 0.5,
+    });
   });
 });
 
