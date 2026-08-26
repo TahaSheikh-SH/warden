@@ -1,31 +1,26 @@
 'use strict';
 
-// Decides when an ignored HANDOFF becomes a hard STOP, and when to notify
-// the human. Pure decision logic; log I/O and notification delivery live
-// in notify.js.
+// When an ignored HANDOFF becomes a STOP, and when to notify the human. Log
+// I/O and notification delivery live in notify.js.
 
 const fs = require('fs');
 const { ACTIONS } = require('../decide');
 const { sessionLogFile, readLogLines } = require('./logStore');
 
-// Backtest (scripts/cost-curve.js, 4 real transcripts): 5-turn grace past
-// HANDOFF costs $0.26-$0.66; riding out an ignored HANDOFF to session end
-// costs 46-97% of total spend. Grace is cheap, unbounded continuation isn't.
+// Backtest over 4 real transcripts: 5 turns of grace past HANDOFF costs a
+// fraction of a session, while riding an ignored HANDOFF to session end costs
+// 46-97% of total spend. Grace is cheap, unbounded continuation isn't.
 const GRACE_TURN_LIMIT = 5;
 
-// Fixed 2-turn lead before HANDOFF hard-escalates to STOP, giving a human
-// a chance to react before severity increases. Not independently
-// cost-optimized — see projects/2026-08-23-stress-test-findings/reference/
-// 08-notify-limit-backtest-data.md for why turn 3 isn't uniquely justified
-// over 2 or 4.
+// Two turns of lead before STOP, so a human can react before severity
+// increases. Not independently cost-optimized: 2 and 4 measured the same.
 const NOTIFY_TURN_LIMIT = GRACE_TURN_LIMIT - 2;
 
 // Re-fire at GRACE_TURN_LIMIT so a human who missed the first notification
 // gets a second chance right before STOP fires.
 const NOTIFY_MILESTONES = [NOTIFY_TURN_LIMIT, GRACE_TURN_LIMIT];
 
-// Fails open (null) on a missing/unreadable log — a broken log must never
-// block a turn.
+// Fails open (null): a broken log must never block a turn.
 function getLastNudgedAction(sessionKey, logFilePath = sessionLogFile(sessionKey)) {
   try {
     const lines = readLogLines(logFilePath);
@@ -94,10 +89,8 @@ function countTrailingAction(
   }
 }
 
-// Sidecar recording the highest milestone already notified, so a count
-// that jumps past a milestone (e.g. 2 -> 4) still gets one notification
-// instead of going silent. Best-effort: a failed read/write risks a
-// duplicate/missed notify, never a blocked turn.
+// Records the highest milestone already notified, so a count that jumps past
+// one (2 -> 4) still notifies once instead of going silent.
 function notifyMarkerFile(logFilePath) {
   return `${logFilePath}.notified`;
 }
@@ -129,9 +122,8 @@ function highestReachedMilestone(count) {
   return reached;
 }
 
-// Fires once per milestone (tracked via the persisted marker above), not
-// every turn past the first, so an ignored streak gets a few chances to
-// reach the human instead of spamming a notification each turn.
+// Once per milestone, not once per turn: an ignored streak gets a couple of
+// chances to reach the human without spamming.
 function shouldNotifyHuman(
   action,
   sessionKey,

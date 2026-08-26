@@ -3,17 +3,10 @@
 const fs = require('fs');
 const readline = require('readline');
 
-/**
- * Maps a single raw Pi coding-agent session entry to the harness-agnostic
- * NormalizedTranscriptEntry shape. Confirmed against
- * @earendil-works/pi-coding-agent's session-manager.d.ts and real session
- * files on disk (~/.pi/agent/sessions/**\/*.jsonl): the header line is
- * `{type: "session", id, timestamp, cwd}` (no parentId); turn entries are
- * `{type: "message", id, parentId, timestamp, message: {role, usage}}`,
- * where usage is `{input, output, cacheRead, cacheWrite}`; compaction is
- * its own entry type, `{type: "compaction", id, parentId, timestamp,
- * summary, firstKeptEntryId, tokensBefore}` — not a field on a message.
- */
+// Maps a raw Pi session entry to NormalizedTranscriptEntry. Shapes confirmed
+// against pi-coding-agent's session-manager.d.ts and real session files:
+// usage is `{input, output, cacheRead, cacheWrite}`, and compaction is its own
+// entry type rather than a field on a message.
 function normalizeEntry(entry) {
   const isMessage = entry.type === 'message';
   const message = isMessage ? entry.message : null;
@@ -39,12 +32,8 @@ function normalizeEntry(entry) {
   };
 }
 
-/**
- * Reads a Pi session .jsonl into its raw parts: the `session` header entry
- * (if present), a byId map of every entry keyed by id, the insertion order
- * of those ids, and the id of the last entry seen (the current leaf). I/O
- * only — no branch-walking or normalization.
- */
+// I/O only: header entry, entries by id, insertion order, and the last id
+// seen (the current leaf). No branch-walking or normalization.
 async function readSessionEntries(sessionFilePath) {
   const stream = readline.createInterface({
     input: fs.createReadStream(sessionFilePath, { encoding: 'utf8' }),
@@ -80,12 +69,8 @@ async function readSessionEntries(sessionFilePath) {
   return { header, byId, order, leafId };
 }
 
-/**
- * Walks parentId back from `leafId` to the root and returns the resulting
- * chain of ids in chronological order. Sibling branches (e.g. from a
- * rewind/fork) are excluded, since they were never part of the turn
- * sequence that produced the session's current state. Pure — no I/O.
- */
+// Walks parentId from the leaf to the root, chronologically. Sibling branches
+// (from a rewind/fork) never produced the current state, so they're excluded.
 function findActiveChain(byId, order, leafId) {
   const activeIds = new Set();
   let cursor = leafId;
@@ -98,13 +83,8 @@ function findActiveChain(byId, order, leafId) {
   return order.filter((id) => activeIds.has(id));
 }
 
-/**
- * Reads a Pi session .jsonl (tree-structured: each entry has `id` and
- * `parentId`, branching rather than flat) and yields
- * NormalizedTranscriptEntry objects for only the active branch — walking
- * parentId back from the last entry in the file (the current leaf) to the
- * root, then replaying that chain in chronological order.
- */
+// Pi sessions are trees, not flat logs, so this yields only the active
+// branch — the chain from the current leaf back to the root.
 async function* streamNormalizedEntries(sessionFilePath) {
   const { header, byId, order, leafId } = await readSessionEntries(sessionFilePath);
   const activeChain = findActiveChain(byId, order, leafId);

@@ -49,14 +49,11 @@ function exceedsHandoffThreshold(state) {
   };
 }
 
-// CAVEAT: compacting rewrites the prompt prefix, invalidating the cache, so
-// the next turn pays a full cache write — COMPACT can raise cost even as the
-// token count drops. Measured over 84 transcripts / 79 real compactions:
-// that costs ~1.4% of spend, too little to move THRESHOLDS on its own. The
-// unmodelled costs that do matter are latency (~153s median per compaction)
-// and firing early — the absolute floor below trips near 0.6x the context
-// where compaction actually happened (median ~168k). Changing it needs the
-// false-positive rate hardened first, per AGENTS.md.
+// CAVEAT: compacting invalidates the prompt cache, so COMPACT can raise cost
+// even as the token count drops. Measured at ~1.4% of spend over 84
+// transcripts — too little to move THRESHOLDS. What does matter is firing
+// early: this floor trips near 0.6x the context where compaction actually
+// happened (median ~168k).
 function exceedsCompactThreshold(state) {
   const overPct = state.contextUsedPct >= THRESHOLDS.compactContextPct;
   const overAbsolute = state.contextUsedTokens >= THRESHOLDS.compactContextTokens;
@@ -139,14 +136,8 @@ const RULES = [
   isAgingActiveSession,
 ];
 
-/**
- * Pure decision function: ResourceState in, {action, reasons} out. No I/O,
- * no side effects. decide() never emits STOP; that action exists in the
- * enum for the actuator layer, which escalates ignored HANDOFFs into it.
- *
- * Implemented as a composed pipeline of named predicates (one per rule),
- * each independently testable, rather than one long if/else chain.
- */
+// Pure: ResourceState in, {action, reasons} out. Never emits STOP — that
+// action exists for the actuator layer, which escalates ignored HANDOFFs.
 function decide(state) {
   for (const rule of RULES) {
     const match = rule(state);

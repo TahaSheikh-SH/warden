@@ -1,15 +1,10 @@
 #!/usr/bin/env node
 'use strict';
 
-// Claude Code statusLine command: renders warden's most recently logged
-// decision as an extra footer line, since systemMessage/stderr don't
-// reliably reach the user on advisory (exit 0) turns (see
-// projects/2026-08-23-deterministic-cli-visibility/spec.md). Not
-// session-scoped — shows the latest logged decision across all warden
-// sessions, a known simplification until log entries carry cwd/session
-// identity to filter on. "Latest" resolves through latestLogFile(), not
-// LOG_FILE: decisions go to per-session files now, so reading the shared
-// log would freeze this line on the last entry written before that split.
+// Claude Code statusLine command: renders warden's most recent logged decision
+// as a footer line, since systemMessage/stderr don't reliably reach the human
+// on advisory turns. Not session-scoped — it shows the latest decision across
+// all sessions, until log entries carry enough identity to filter on.
 
 const { latestLogFile, readLogLines } = require('./logStore');
 const { nudgeMessageFor } = require('./messages');
@@ -26,8 +21,7 @@ function formatStatusLine(logFilePath) {
   }
 
   if (!entry || !Array.isArray(entry.reasons)) return null;
-  // JSONL log doesn't carry full state, so cost clause is omitted here.
-  return nudgeMessageFor(entry.action, entry.reasons, null);
+  return nudgeMessageFor(entry.action, entry.reasons);
 }
 
 function main() {

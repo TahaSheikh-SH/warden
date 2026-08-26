@@ -1,11 +1,8 @@
 'use strict';
 
-// Facade kept at the repo root for backward compatibility — this file used
-// to own both the Claude Code transcript parsing and the harness-agnostic
-// reduction. Those are now split: harnesses/claude-code/transcript.js does
-// the parsing/normalization, core/resourceStateCore.js does the reduction
-// (identically for every harness). See AGENTS.md "Keep harness-specific
-// behavior out of the shared core".
+// Claude Code entry point: harnesses/claude-code/transcript.js normalizes,
+// core/resourceStateCore.js reduces. Nothing harness-specific belongs in the
+// core (AGENTS.md).
 
 const fs = require('fs');
 const os = require('os');
@@ -22,9 +19,8 @@ const {
 } = require('./harnesses/claude-code/transcript');
 const { decide } = require('./decide');
 
-// native.js/codex spawns a fresh process per turn, so this persists
-// {lineCount, fileSize, accumulator} to disk between invocations — otherwise every
-// turn re-streams and re-folds from line 1 (O(n^2) over a session).
+// Hook adapters spawn a fresh process per turn, so the accumulator is
+// persisted between invocations — otherwise every turn re-folds from line 1.
 const CACHE_DIR = path.join(os.homedir(), '.warden', 'cache');
 
 function cacheFileFor(sessionFilePath) {
@@ -54,13 +50,9 @@ function writeAccumulatorCache(sessionFilePath, cache) {
   }
 }
 
-/**
- * Streams a Claude Code session .jsonl into a ResourceState snapshot,
- * reading real per-turn `usage` blocks.
- * Incrementally folds onto the cache above, unless `opts.maxLines` is set
- * — a partial-replay backtest must not read/write the real cache since it
- * evaluates an out-of-order prefix.
- */
+// Streams a session .jsonl into a ResourceState, folding onto the cache
+// above. `opts.maxLines` bypasses the cache: a partial-replay backtest
+// evaluates an out-of-order prefix that must not poison it.
 async function buildResourceState(sessionFilePath, opts = {}) {
   const useCache = !opts.maxLines;
   const cached = useCache ? readAccumulatorCache(sessionFilePath) : null;

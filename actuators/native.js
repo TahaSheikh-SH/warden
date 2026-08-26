@@ -1,12 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
-// Claude Code UserPromptSubmit hook: runs decide() every turn and acts on
-// it directly (same decide.js/buildResourceState as cli.js, no new
-// decision logic). Session-lifecycle only — no per-turn model-effort
-// throttling, since native hooks can't set effort/thinking-budget.
-//
-// Register in .claude/settings.json:
+// Claude Code UserPromptSubmit hook: runs decide() every turn and acts on it.
+// Register in .claude/settings.json (or run `npm run setup`):
 //   "hooks": { "UserPromptSubmit": [{ "hooks": [{ "type": "command",
 //     "command": "node /path/to/warden/actuators/native.js" }] }] }
 
@@ -23,8 +19,7 @@ const {
   appendLogEntry,
 } = require('./shared');
 
-// Timeboxed experiment to measure nudge-follow/block-override rates (see
-// scripts/rollup.js) — not permanent infra.
+// Feeds the nudge-follow/override rates that scripts/rollup.js reports.
 function logDecision(decision, state, sessionFilePath, logFilePath) {
   appendLogEntry(
     {
@@ -41,14 +36,12 @@ function logDecision(decision, state, sessionFilePath, logFilePath) {
   );
 }
 
-// Thin wrapper so this file's sessionKey/log-path wiring is testable
-// independent of escalateHandoffToStop's own logic.
+// Wrapper so this file's sessionKey/log-path wiring is testable on its own.
 function computeEffectiveDecision(decision, sessionFilePath, logFilePath) {
   return escalateHandoffToStop(decision, sessionFilePath, logFilePath);
 }
 
-// Extracted from main() so it's testable with an injected execFileFn
-// without going through a real stdin hook invocation.
+// Separate from main() so a test can inject execFileFn without stdin.
 function logDecisionAndNotify(
   effectiveDecision,
   state,
@@ -73,13 +66,12 @@ function readStdin() {
   });
 }
 
-// COMPACT/CHECKPOINT/HANDOFF are always advisory. STOP hard-blocks (exit 2)
-// — it only fires after GRACE_TURN_LIMIT consecutive ignored HANDOFFs, a
-// narrower trigger than the old blanket HANDOFF/STOP block reverted after
-// ~97% override rate (commit 8787). WARDEN_DISABLE_STOP_BLOCK=1 reverts
-// just this path back to advisory.
-function respondFor(action, reasons, state) {
-  const message = nudgeMessageFor(action, reasons, state);
+// COMPACT/CHECKPOINT/HANDOFF stay advisory. Only STOP hard-blocks (exit 2),
+// and only after GRACE_TURN_LIMIT ignored HANDOFFs — a blanket HANDOFF block
+// was reverted once at a ~97% override rate. WARDEN_DISABLE_STOP_BLOCK=1
+// makes even STOP advisory.
+function respondFor(action, reasons) {
+  const message = nudgeMessageFor(action, reasons);
   if (!message) return { exitCode: 0, output: null };
 
   if (action === ACTIONS.STOP && process.env.WARDEN_DISABLE_STOP_BLOCK !== '1') {
@@ -138,12 +130,12 @@ async function main() {
 
   const { exitCode, output, stderr } =
     effectiveDecision.action === ACTIONS.STOP
-      ? respondFor(effectiveDecision.action, effectiveDecision.reasons, state)
+      ? respondFor(effectiveDecision.action, effectiveDecision.reasons)
       : effectiveDecision.action !== ACTIONS.CONTINUE &&
           alreadyNudgedThisAction &&
           !notifyingHumanThisTurn
         ? { exitCode: 0, output: null, stderr: null }
-        : respondFor(effectiveDecision.action, effectiveDecision.reasons, state);
+        : respondFor(effectiveDecision.action, effectiveDecision.reasons);
 
   if (output) {
     process.stdout.write(JSON.stringify(output));

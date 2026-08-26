@@ -56,9 +56,8 @@ function notifyHuman(message, { execFileFn = execFile } = {}) {
   }
 }
 
-// Opt-in via WARDEN_NOTIFY=1. Call after logDecision(), since this reads
-// the log entry logDecision() just wrote. Plain-language messages only —
-// full reason detail stays in the JSONL log, not the popup.
+// Opt-in via WARDEN_NOTIFY=1, and call after logDecision(): this counts the
+// entry that call just wrote. Full reason detail stays in the log.
 const ACTION_MESSAGES = {
   COMPACT: 'Context is getting full. Compact it to keep things running smoothly.',
   CHECKPOINT: 'Good spot to checkpoint before continuing.',

@@ -1,17 +1,11 @@
 'use strict';
 
-/**
- * Maps a single OpenCode plugin event to the harness-agnostic
- * NormalizedTranscriptEntry shape, or null if the event carries no
- * reducer-relevant signal. OpenCode is not a spawned-hook-script harness —
- * there is no on-disk transcript to stream; the plugin (harnesses/opencode/
- * plugin.js) receives these events live, in-process, and feeds them here
- * one at a time. Field names confirmed against opencode's generated SDK
- * types (packages/sdk/js/src/gen/types.gen.ts): an AssistantMessage's
- * token usage lives at `tokens: {input, output, reasoning, cache: {read,
- * write}}`. Compaction is its own event, `session.compacted` (via
- * `EventSessionCompacted`), not a transcript marker.
- */
+// Maps OpenCode plugin events to NormalizedTranscriptEntry. There is no
+// on-disk transcript: plugin.js feeds these in live, one at a time. Field
+// names are from opencode's generated SDK types — token usage is
+// `tokens: {input, output, reasoning, cache: {read, write}}`, and compaction
+// is its own `session.compacted` event rather than a transcript marker.
+
 function usageFromTokens(tokens) {
   if (!tokens) return null;
   return {
@@ -36,10 +30,8 @@ function normalizeMessageUpdated(event) {
     sessionId: info.sessionID || null,
     cwd: null,
     gitBranch: null,
-    // providerID/modelID identify which real context window applies (see
-    // resolveContextWindowTokens in plugin.js) — not part of the shared
-    // NormalizedTranscriptEntry shape since resolving it needs the
-    // OpenCode client (I/O), which this pure mapping function doesn't have.
+    // Which real context window applies. Not part of the shared entry shape:
+    // resolving it needs the OpenCode client, which this pure mapping lacks.
     providerID: isAssistant ? info.providerID || null : null,
     modelID: isAssistant ? info.modelID || null : null,
   };
@@ -62,18 +54,6 @@ const HANDLERS = {
   'session.compacted': normalizeSessionCompacted,
 };
 
-/**
- * Maps a single OpenCode plugin event to the harness-agnostic
- * NormalizedTranscriptEntry shape, or null if the event carries no
- * reducer-relevant signal. OpenCode is not a spawned-hook-script harness —
- * there is no on-disk transcript to stream; the plugin (harnesses/opencode/
- * plugin.js) receives these events live, in-process, and feeds them here
- * one at a time. Field names confirmed against opencode's generated SDK
- * types (packages/sdk/js/src/gen/types.gen.ts): an AssistantMessage's
- * token usage lives at `tokens: {input, output, reasoning, cache: {read,
- * write}}`. Compaction is its own event, `session.compacted` (via
- * `EventSessionCompacted`), not a transcript marker.
- */
 function normalizeEvent(event) {
   if (!event || typeof event !== 'object') return null;
   const handler = HANDLERS[event.type];

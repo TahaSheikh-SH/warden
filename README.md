@@ -90,10 +90,11 @@ without needing notification permissions.
 
 `npm run setup` wires this for you. If you have no `statusLine` yet, it
 points `statusLine` straight at warden. If you already have one, it
-generates `~/.warden/claude-statusline.sh` — a wrapper that runs your
-existing command and then warden's, feeding both the same stdin payload —
-and points `statusLine` at that. Your own script is never edited, so
-reinstalling it doesn't drop warden's line. To wire it by hand instead:
+generates `~/.warden/claude-statusline.sh` — a wrapper that reads the
+status-line payload once and pipes it to your existing command and then to
+warden's — and points `statusLine` at that. Your own script is never
+edited, so reinstalling it doesn't drop warden's line. To wire it by hand
+instead:
 
 ```bash
 node /path/to/warden/actuators/statusline.js

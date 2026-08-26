@@ -25,9 +25,8 @@
 
 const GROWTH_WINDOW_TURNS = 5;
 
-// Shared by both the transcript reducer below and harnesses/pi/extension.js
-// (which tracks growth live off ctx.getContextUsage() instead of replaying
-// a transcript) — same slope-over-window math, one implementation.
+// Shared with harnesses/pi/extension.js, which tracks growth live instead of
+// replaying a transcript — same slope math, one implementation.
 function computeGrowthProjection(recentTurnTokens, contextWindowTokens, contextUsedTokens) {
   const contextGrowthPerTurn =
     recentTurnTokens.length >= 2
@@ -46,7 +45,6 @@ function computeGrowthProjection(recentTurnTokens, contextWindowTokens, contextU
 function initialAccumulator() {
   return {
     detectedContextWindowTokens: null,
-    model: null,
     sessionId: null,
     cwd: null,
     gitBranch: null,
@@ -67,15 +65,13 @@ function initialAccumulator() {
   };
 }
 
-// First-wins session-level fields (sessionId/cwd/gitBranch/context window)
-// carried by whichever entry happens to report them first.
+// First-wins: whichever entry reports a session-level field first sets it.
 function applyMetadata(accumulator, entry) {
   accumulator.sessionId = accumulator.sessionId || entry.sessionId || null;
   accumulator.cwd = accumulator.cwd || entry.cwd || null;
   accumulator.gitBranch = accumulator.gitBranch || entry.gitBranch || null;
   accumulator.detectedContextWindowTokens =
     accumulator.detectedContextWindowTokens || entry.detectedContextWindowTokens || null;
-  accumulator.model = accumulator.model || entry.model || null;
 }
 
 function applyTimestamp(accumulator, entry) {
@@ -102,11 +98,9 @@ function applyAssistantUsage(accumulator, entry) {
   const input = usage.inputTokens || 0;
   const output = usage.outputTokens || 0;
   const cacheRead = usage.cacheReadTokens || 0;
-  // A harness that cannot report cache writes at all sends null, and that is
-  // not a measured zero: a cost rule reading it as one would conclude
-  // compaction is free there and silently never fire. Totals fold unknown as
-  // 0 to stay additive, so any such rule must read the last-turn field below
-  // and handle its null explicitly.
+  // null means the harness cannot report cache writes at all, which is not a
+  // measured zero. Totals fold unknown as 0 to stay additive, so a consumer
+  // that needs the distinction must read the last-turn field below.
   const cacheCreation =
     typeof usage.cacheCreationTokens === 'number' ? usage.cacheCreationTokens : null;
 
@@ -124,9 +118,8 @@ function applyAssistantUsage(accumulator, entry) {
   }
 }
 
-// Mutates and returns accumulator. Split out from reduceTranscriptEntries so a
-// caller with a persistent accumulator can fold only new entries instead
-// of replaying the whole transcript each turn (was O(n^2) over a session).
+// Mutates and returns accumulator, so a caller holding one across turns can
+// fold only new entries instead of replaying the transcript (was O(n^2)).
 function foldEntry(accumulator, entry) {
   if (!entry) return accumulator;
   applyMetadata(accumulator, entry);
@@ -172,7 +165,6 @@ function finalizeAccumulator(accumulator, opts = {}) {
     sessionId: accumulator.sessionId,
     cwd: accumulator.cwd,
     gitBranch: accumulator.gitBranch,
-    model: accumulator.model,
     contextWindowTokens,
     contextUsedTokens,
     contextUsedPct,
@@ -182,8 +174,7 @@ function finalizeAccumulator(accumulator, opts = {}) {
     totalOutputTokens: accumulator.totalOutputTokens,
     totalCacheReadTokens: accumulator.totalCacheReadTokens,
     totalCacheCreationTokens: accumulator.totalCacheCreationTokens,
-    // Last-turn split, for rules that need to price the cache rather than
-    // just size the context. No rule consumes these yet.
+    // Last-turn split, for a rule that needs cache traffic rather than size.
     lastTurnCacheReadTokens: accumulator.lastTurnCacheReadTokens,
     lastTurnCacheCreationTokens: accumulator.lastTurnCacheCreationTokens,
     compactionCount: accumulator.compactionCount,
@@ -193,13 +184,8 @@ function finalizeAccumulator(accumulator, opts = {}) {
   };
 }
 
-/**
- * Reduces an (async or sync) iterable of NormalizedTranscriptEntry into a
- * ResourceState (minus sessionFilePath, which is harness-specific and
- * attached by the caller). Full from-scratch reduction — callers that can
- * keep an accumulator across calls should use foldEntry/finalizeAccumulator
- * directly instead, to avoid re-folding entries already folded earlier.
- */
+// Reduces an iterable of NormalizedTranscriptEntry into a ResourceState, from
+// scratch. sessionFilePath is harness-specific and attached by the caller.
 async function reduceTranscriptEntries(entries, opts = {}) {
   const accumulator = initialAccumulator();
   for await (const entry of entries) {

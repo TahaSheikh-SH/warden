@@ -1,12 +1,9 @@
 'use strict';
 
-// Pi coding-agent in-process extension (@earendil-works/pi-coding-agent
-// ExtensionAPI). Not a spawned-hook-script harness — extensions load
-// directly into the running agent, registering handlers on a `pi` object.
-// `ctx.getContextUsage()` gives the live {tokens, contextWindow, percent},
-// `ctx.ui.notify(message, "warning")` is the nudge mechanism.
-// harnesses/pi/transcript.js still exists for offline backtesting against
-// saved session .jsonl files — this file is the live path.
+// Pi in-process extension (@earendil-works/pi-coding-agent ExtensionAPI):
+// handlers register on a `pi` object, `ctx.getContextUsage()` gives live usage,
+// `ctx.ui.notify` delivers the nudge. This is the live path;
+// harnesses/pi/transcript.js is for offline backtests.
 
 const { decide, ACTIONS } = require('../../decide');
 const { computeGrowthProjection, GROWTH_WINDOW_TURNS } = require('../../core/resourceStateCore');
@@ -34,10 +31,9 @@ function logDecision(decision, state, sessionKey, logFilePath) {
   );
 }
 
-// Tracks session state decide() needs (compaction count, burn-rate window,
-// session age) beyond what ctx.getContextUsage() carries, and turns a live
-// usage snapshot into a decide()-shaped ResourceState. Exported separately
-// so it's testable without a real ExtensionContext.
+// Tracks what decide() needs beyond ctx.getContextUsage() — compaction count,
+// burn-rate window, session age. Exported separately so it's testable without
+// a real ExtensionContext.
 function createSessionTracker({ logFilePath } = {}) {
   const startedAt = Date.now();
   // process.pid guards against two pi processes starting in the same ms.
@@ -88,8 +84,7 @@ function createSessionTracker({ logFilePath } = {}) {
 const respondFor = nudgeMessageFor;
 
 // Install by adding this file's path to `packages` in
-// ~/.pi/agent/settings.json (or `pi install <path>`). `options.logFilePath`
-// overrides the default ~/.warden/log.jsonl — used by tests.
+// ~/.pi/agent/settings.json, or run `npm run setup`.
 function WardenPiExtension(pi, { logFilePath, notifyOpts = {} } = {}) {
   const tracker = createSessionTracker({ logFilePath });
   // Sticky once STOP is the effective decision — tool_call fires on every
@@ -115,9 +110,8 @@ function WardenPiExtension(pi, { logFilePath, notifyOpts = {} } = {}) {
     const decision = decide(state);
     if (decision.action === ACTIONS.CONTINUE) return;
 
-    // Dedup like native.js's alreadyNudgedThisAction, or ctx.ui.notify
-    // spams the same nudge every turn the action stays non-CONTINUE.
-    // Read BEFORE logDecision appends this turn's own entry.
+    // Without this, ctx.ui.notify repeats the same nudge every turn the action
+    // stays non-CONTINUE. Read BEFORE logDecision appends this turn's entry.
     const alreadyNudgedThisAction =
       getLastNudgedAction(tracker.sessionKey, tracker.logFilePath) === decision.action;
 
@@ -130,9 +124,9 @@ function WardenPiExtension(pi, { logFilePath, notifyOpts = {} } = {}) {
     logDecision(effectiveDecision, state, tracker.sessionKey, tracker.logFilePath);
     maybeNotifyHuman(effectiveDecision, tracker.sessionKey, tracker.logFilePath, notifyOpts);
 
-    const message = respondFor(effectiveDecision.action, effectiveDecision.reasons, state);
-    // Armed here for the NEXT tool call — turn_end fires after the turn
-    // already completed, so the block goes through tool_call, not dedup.
+    const message = respondFor(effectiveDecision.action, effectiveDecision.reasons);
+    // Armed for the NEXT tool call: turn_end fires after the turn completed,
+    // so the block has to go through tool_call.
     stopBlockMessage = effectiveDecision.action === ACTIONS.STOP ? message : null;
 
     if ((effectiveDecision.action !== ACTIONS.STOP && alreadyNudgedThisAction) || !message) return;

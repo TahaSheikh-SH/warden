@@ -7,10 +7,7 @@ function isNumberOrUndefined(value) {
   return value === undefined || typeof value === 'number';
 }
 
-/**
- * Validates a `message.usage` block's token fields. Pure. Returns a list of
- * error strings (empty when valid) rather than throwing.
- */
+// Returns error strings (empty when valid) rather than throwing.
 function validateUsageShape(usage) {
   const errors = [];
 
@@ -30,14 +27,9 @@ function validateUsageShape(usage) {
   return errors;
 }
 
-/**
- * Validates the shape of a single raw Claude Code transcript line before
- * its fields are trusted for normalization. Pure, no I/O — returns
- * {valid, errors} rather than throwing, so a malformed-but-parseable line
- * (e.g. a `usage` block with a string field where a number is expected)
- * gets skipped explicitly instead of silently corrupting a running total
- * via implicit coercion.
- */
+// Checked before any field is trusted, so a parseable-but-malformed line (a
+// `usage` string where a number belongs) is skipped rather than coerced into
+// a running total.
 function validateTranscriptEntry(entry) {
   const errors = [];
 
@@ -60,11 +52,11 @@ function validateTranscriptEntry(entry) {
   return { valid: errors.length === 0, errors };
 }
 
-// Claude Code transcripts report no context window, only `message.model`, so
-// resolve it here rather than in the core (AGENTS.md "Read context limits from
-// the harness/model"). Unlisted models resolve to null — an unknown window,
-// not an assumed one. Patterns are pairwise disjoint, so order doesn't matter;
-// a test pins that, since an overlapping addition would change it silently.
+// Claude Code reports no context window, only `message.model`, so it resolves
+// here rather than in the core (AGENTS.md). An unlisted model gives null — an
+// unknown window, not an assumed one. A test pins that the patterns stay
+// pairwise disjoint, since an overlapping addition would change matches
+// silently.
 const MODEL_CONTEXT_WINDOWS = [
   [/^claude-(sonnet|opus)-4-[6-9]/, 1000000],
   [/^claude-(fable|sonnet|opus)-[5-9]/, 1000000],
@@ -79,12 +71,7 @@ function contextWindowForModel(model) {
   return match ? match[1] : null;
 }
 
-/**
- * Maps a single raw (already-validated) Claude Code transcript entry to the
- * harness-agnostic NormalizedTranscriptEntry shape core/resourceStateCore.js
- * consumes. Returns null for entries that carry no reducer-relevant signal
- * (still fine to yield through — the core reducer treats null as a no-op).
- */
+// Maps a validated entry to NormalizedTranscriptEntry.
 function normalizeEntry(entry) {
   const { usage, model = null } = entry.message || {};
   return {
@@ -106,22 +93,14 @@ function normalizeEntry(entry) {
     // First-wins in the core reducer, so a mid-session /model switch keeps the
     // first model's window — same as Codex's per-turn model_context_window.
     detectedContextWindowTokens: contextWindowForModel(model),
-    // Also first-wins; the actuator layer prices compaction with it.
-    model,
   };
 }
 
-/**
- * Streams a Claude Code session .jsonl and yields NormalizedTranscriptEntry
- * objects. `opts.maxLines` lets a backtest replay a session as it looked
- * partway through, instead of only at its final state. `opts.startLine`
- * skips the first N non-blank lines without parsing them — used by callers
- * that already folded those lines into a cached accumulator on a prior
- * call, so re-parsing/re-reducing the whole transcript every turn doesn't
- * become O(n^2) over a session. `opts.progress`, if given, is mutated with
- * `{ lineCount }` as lines are counted, so the caller can read the final
- * total line count after iteration to persist alongside its cache.
- */
+// Yields NormalizedTranscriptEntry objects. `opts.maxLines` replays a session
+// as it looked partway through, for backtests. `opts.startLine` skips lines a
+// caller already folded into a cached accumulator, without parsing them.
+// `opts.progress` is mutated with `{lineCount}` so that caller can persist the
+// count alongside its cache.
 async function* streamNormalizedEntries(sessionFilePath, opts = {}) {
   const maxLines = opts.maxLines || Infinity;
   const startLine = opts.startLine || 0;

@@ -11,20 +11,16 @@ const LOG_DIR = path.join(os.homedir(), '.warden');
 const LOG_FILE = path.join(LOG_DIR, 'log.jsonl');
 const SESSIONS_DIR = path.join(LOG_DIR, 'sessions');
 
-// One log file per session avoids cross-session write contention and
-// unbounded growth of a shared log. sessionKey isn't always filename-safe
-// (native/codex use the full transcript path), so non-filename chars get
-// collapsed.
+// One file per session, so sessions don't contend for one growing log.
+// sessionKey is often a full transcript path, so collapse unsafe chars.
 function sessionLogFile(sessionKey) {
   const safeKey = String(sessionKey).replace(/[^a-zA-Z0-9_-]/g, '_');
   return path.join(SESSIONS_DIR, `${safeKey}.jsonl`);
 }
 
-// The most recently written per-session log, falling back to the legacy
-// shared log when no per-session logs exist. Readers that want "the latest
-// decision across all sessions" must resolve the file this way: nothing has
-// appended to LOG_FILE since per-session files landed, so reading LOG_FILE
-// directly pins the reader to whatever was last written before that split.
+// Newest per-session log, falling back to the legacy shared one. Readers
+// that want "the latest decision" must resolve it this way: nothing appends
+// to LOG_FILE anymore, so reading it directly returns a frozen entry.
 function latestLogFile(sessionsDir = SESSIONS_DIR) {
   try {
     const files = fs
@@ -50,8 +46,7 @@ function appendLogEntry(entry, logFile = sessionLogFile(entry.sessionKey)) {
   }
 }
 
-// Shared by hasEverStopped/countTrailingAction so escalateHandoffToStop
-// reads the file once instead of twice per call. Fails open (returns []).
+// Fails open (returns []) — a broken log must never block a turn.
 function readLogLines(logFilePath) {
   try {
     if (!fs.existsSync(logFilePath)) return [];

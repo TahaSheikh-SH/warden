@@ -77,15 +77,17 @@ describe('WardenPlugin nudge dedup', () => {
     assert.notEqual(toasts[0].body.message, toasts[1].body.message);
   });
 
-  test('keeps blocking tool calls while STOP holds, even on a suppressed turn', async () => {
-    const logFilePath = tempLogFilePath();
-    const { plugin } = await pluginWithToastLog(logFilePath);
-    // Five consecutive ignored HANDOFFs escalate to STOP; dedup must not stop
-    // the escalation counter from being logged each turn.
+  test('suppression does not stall the HANDOFF-to-STOP escalation', async () => {
+    const { plugin, toasts } = await pluginWithToastLog(tempLogFilePath());
+    // Every turn is logged even when its nudge is suppressed, so five ignored
+    // HANDOFFs still escalate — one toast for the first HANDOFF, one for STOP,
+    // and nothing for the four repeats in between.
     for (let turn = 1; turn <= 6; turn += 1) {
       await plugin.event(assistantEvent(`msg_${turn}`, 300000 + turn));
     }
 
+    assert.equal(toasts.length, 2);
+    assert.equal(toasts[1].body.variant, 'error');
     await assert.rejects(() => plugin['tool.execute.before']());
   });
 });

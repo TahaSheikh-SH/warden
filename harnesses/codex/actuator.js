@@ -1,12 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-// Codex CLI UserPromptSubmit hook (learn.chatgpt.com/docs/hooks). stdin
-// JSON: session_id, transcript_path (nullable), cwd, hook_event_name,
-// model, permission_mode, turn_id, prompt. Response JSON on stdout:
-// {continue, stopReason, systemMessage, hookSpecificOutput:
-// {hookEventName, additionalContext}}. Advisory except STOP, which
-// hard-blocks (continue:false) — see respondFor below.
+// Codex CLI UserPromptSubmit hook (learn.chatgpt.com/docs/hooks): hook input
+// on stdin, response JSON on stdout. Advisory except STOP, which hard-blocks
+// with continue:false.
 
 const fs = require('fs');
 const {
@@ -69,11 +66,10 @@ function computeEffectiveDecision(decision, sessionFilePath, logFilePath) {
   return escalateHandoffToStop(decision, sessionFilePath, logFilePath);
 }
 
-// Same advisory stance as native.js's respondFor for
-// COMPACT/CHECKPOINT/HANDOFF; STOP uses this harness's hard-stop lever
-// (continue:false/stopReason).
-function respondFor(action, reasons, state) {
-  const message = nudgeMessageFor(action, reasons, state);
+// Advisory for COMPACT/CHECKPOINT/HANDOFF; STOP uses this harness's hard-stop
+// lever instead.
+function respondFor(action, reasons) {
+  const message = nudgeMessageFor(action, reasons);
   if (!message) return null;
 
   if (action === ACTIONS.STOP) {
@@ -86,9 +82,8 @@ function respondFor(action, reasons, state) {
       hookEventName: 'UserPromptSubmit',
       additionalContext: message,
     },
-    // systemMessage/additionalContext don't reliably render in the CLI
-    // (anthropics/claude-code#50542, #9090, #40380) — stderr is the only
-    // channel confirmed visible, so mirror the nudge there too.
+    // additionalContext reaches the model but isn't guaranteed to reach the
+    // human, so the nudge is mirrored to stderr.
     stderr: message,
   };
 }
@@ -146,7 +141,7 @@ async function main() {
     alreadyNudgedThisAction &&
     !notifyingHumanThisTurn
       ? null
-      : respondFor(effectiveDecision.action, effectiveDecision.reasons, state);
+      : respondFor(effectiveDecision.action, effectiveDecision.reasons);
   if (output) {
     const { stderr, ...stdoutPayload } = output;
     process.stdout.write(JSON.stringify(stdoutPayload));

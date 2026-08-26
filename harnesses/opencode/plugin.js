@@ -1,15 +1,10 @@
 'use strict';
 
-// OpenCode plugin — in-process, not a spawned hook script like Claude
-// Code/Codex. Factory signature: `(input: PluginInput, options?) =>
-// Promise<Hooks>`, input = {client, project, directory, worktree, $,
-// serverUrl}. No on-disk transcript, so this keeps an in-memory
-// NormalizedTranscriptEntry accumulator per session, fed via the `event`
-// hook, re-reduced through the shared core each time.
-//
-// Nudge path: `experimental.chat.system.transform`'s `output.system:
-// string[]` appends to the next turn's system prompt — this harness's
-// equivalent of Claude Code's hookSpecificOutput.additionalContext.
+// OpenCode plugin — in-process, not a spawned hook script. No on-disk
+// transcript, so entries accumulate in memory and re-reduce through the shared
+// core on each `event`. The nudge reaches the model through
+// `experimental.chat.system.transform`, this harness's equivalent of Claude
+// Code's additionalContext.
 
 const {
   reduceTranscriptEntries,
@@ -41,9 +36,8 @@ function logDecision(decision, state, sessionKey, logFilePath) {
   );
 }
 
-// Real per-model window via client.config.providers() -> { providers:
-// [{id, models: {[modelID]: {limit: {context, output}}}}] }. Cached per
-// providerID/modelID pair since it won't change mid-session.
+// Real per-model window via client.config.providers(), cached per
+// providerID/modelID pair since it can't change mid-session.
 function createContextWindowResolver(client) {
   const cache = new Map();
 
@@ -68,14 +62,12 @@ function createContextWindowResolver(client) {
   };
 }
 
-// Exported separately from WardenPlugin so it's testable without a real
-// OpenCode client/project context.
+// Exported separately so it's testable without a real OpenCode client.
 function createSessionEvaluator({ contextWindowTokens, client, logFilePath } = {}) {
   const entries = [];
   const resolveContextWindowTokens = createContextWindowResolver(client);
-  // Sticky across events — a compaction event carries no providerID/modelID,
-  // so this holds the last resolved value instead of losing the window
-  // whenever the latest event isn't a message.
+  // Sticky: a compaction event carries no providerID/modelID, and the window
+  // must not be lost whenever the latest event isn't a message.
   let lastKnownContextWindowTokens = null;
 
   return {
@@ -106,8 +98,8 @@ function createSessionEvaluator({ contextWindowTokens, client, logFilePath } = {
 
 const respondFor = nudgeMessageFor;
 
-// Best-effort toast so the nudge is visible immediately, not just via
-// system-prompt injection. Fails open — older builds may lack tui.showToast.
+// Best-effort, so the nudge is visible now and not only to the next turn's
+// model. Fails open — older builds may lack tui.showToast.
 async function showToastForAction(client, action, message) {
   if (!client || !client.tui || typeof client.tui.showToast !== 'function') return;
   try {
@@ -119,8 +111,8 @@ async function showToastForAction(client, action, message) {
   }
 }
 
-// message.updated fires repeatedly while one assistant message streams,
-// carrying the same info.id each time. Null for any other event shape.
+// message.updated fires repeatedly while one message streams, same id each
+// time. Null for any other event shape.
 function streamingMessageId(event) {
   const info =
     event && event.type === 'message.updated' && event.properties && event.properties.info;
@@ -130,18 +122,15 @@ function streamingMessageId(event) {
 async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindowTokens } = {}) {
   const client = input && input.client;
   const evaluator = createSessionEvaluator({ client, logFilePath, contextWindowTokens });
-  // Handed off between the `event` and `experimental.chat.system.transform`
-  // hooks, which fire separately; cleared once delivered.
+  // Handed between the `event` and transform hooks; cleared once delivered.
   let pendingMessage = null;
-  // Fallback for normalizeEvent's null sessionId, so such sessions don't
-  // collapse into one shared escalation/dedup bucket.
+  // Keeps sessions with no id out of one shared escalation/dedup bucket.
   const fallbackSessionKey = `opencode-${process.pid}-${Date.now()}`;
   // Dedup on streamingMessageId so GRACE_TURN_LIMIT can't exhaust within a
   // single turn.
   let lastProcessedMessageId = null;
-  // Unlike pendingMessage, never cleared by system-prompt-transform —
-  // tool.execute.before needs to keep blocking every tool call for as long
-  // as the session stays STOP'd.
+  // Never cleared by the transform hook, unlike pendingMessage: tool calls
+  // must keep being blocked for as long as the session stays STOP'd.
   let stopBlockMessage = null;
 
   return {
@@ -155,11 +144,10 @@ async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindow
       if (messageId) lastProcessedMessageId = messageId;
 
       const sessionKey = result.state.sessionId || fallbackSessionKey;
-      // Dedup like native.js/pi's alreadyNudgedThisAction. decide() is
-      // stateless, so it re-emits the same action every turn once a floor is
-      // crossed; without this the toast and the system-prompt injection
-      // repeat it for the rest of the session. Read BEFORE logDecision
-      // appends this turn's own entry.
+      // decide() is stateless, so it re-emits the same action every turn once
+      // a floor is crossed — without this the toast repeats for the rest of the
+      // session. Read BEFORE logDecision appends this turn's entry, same as
+      // native.js and pi's extension.
       const alreadyNudgedThisAction =
         getLastNudgedAction(sessionKey, evaluator.logFilePath) === result.decision.action;
 
@@ -171,13 +159,10 @@ async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindow
 
       logDecision(effectiveDecision, result.state, sessionKey, evaluator.logFilePath);
       maybeNotifyHuman(effectiveDecision, sessionKey, evaluator.logFilePath, notifyOpts);
-      // No turn-abort hook exists in the OpenCode SDK (anomalyco/opencode#16626,
-      // unresolved) — but tool.execute.before can throw to reject a tool
-      // call, so STOP uses that instead of relying on the toast alone.
-      const message = respondFor(effectiveDecision.action, effectiveDecision.reasons, result.state);
-      // Armed before the dedup return below: the block has to hold for every
-      // tool call while the session stays STOP'd, whether or not this
-      // particular turn re-shows the message.
+      // No turn-abort hook exists in the OpenCode SDK
+      // (anomalyco/opencode#16626), so STOP blocks through tool.execute.before
+      // rather than relying on the toast alone.
+      const message = respondFor(effectiveDecision.action, effectiveDecision.reasons);
       stopBlockMessage = effectiveDecision.action === ACTIONS.STOP ? message : null;
 
       if ((effectiveDecision.action !== ACTIONS.STOP && alreadyNudgedThisAction) || !message)
