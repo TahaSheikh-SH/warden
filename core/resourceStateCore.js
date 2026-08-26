@@ -16,6 +16,13 @@
 //         // cache writes at all (Codex), which is not a measured zero
 //     } | null,
 //     isCompactionBoundary: boolean,
+//     compaction: {trigger, preTokens, postTokens, durationMs} | null
+//       (optional — rich compaction telemetry, Claude Code only today;
+//       other harnesses leave it null. `trigger`/`preTokens`/`durationMs`
+//       are diagnostics only — decide.js must never read them, since a rule
+//       gated on them would decide differently by harness for a reason
+//       unrelated to session state. `postTokens` may seed the post-compaction
+//       token count below.)
 //     sessionId, cwd, gitBranch: string | null (optional, first-wins)
 //     detectedContextWindowTokens: number | null (optional, first-wins —
 //       some harnesses report their real window size in-transcript, e.g.
@@ -63,6 +70,10 @@ function initialAccumulator() {
     totalCacheReadTokens: 0,
     totalCacheCreationTokens: 0,
     compactionCount: 0,
+    // Auto triggers are warden being late (the harness compacted before
+    // warden's own COMPACT nudge landed) — a distinct signal from a manual
+    // compaction, diagnostic only.
+    autoCompactionCount: 0,
     lastTurnContextTokens: 0,
     lastTurnCacheReadTokens: 0,
     // null until an assistant turn actually reports a number — see
@@ -98,8 +109,16 @@ function applyCompactionBoundary(accumulator, entry) {
   if (!entry.isCompactionBoundary) return;
   accumulator.compactionCount += 1;
   accumulator.recentTurnTokens = [];
-  accumulator.lastTurnContextTokens = 0;
+  // postTokens (Claude Code only) is strictly better than assuming zero —
+  // see commit 0064601 for why zeroing was needed as the fallback.
+  accumulator.lastTurnContextTokens =
+    entry.compaction && typeof entry.compaction.postTokens === 'number'
+      ? entry.compaction.postTokens
+      : 0;
   accumulator.turnsSinceLastCompaction = 0;
+  if (entry.compaction && entry.compaction.trigger === 'auto') {
+    accumulator.autoCompactionCount += 1;
+  }
 }
 
 function applyAssistantUsage(accumulator, entry) {
@@ -204,6 +223,7 @@ function finalizeAccumulator(accumulator, opts = {}) {
     lastTurnCacheReadTokens: accumulator.lastTurnCacheReadTokens,
     lastTurnCacheCreationTokens: accumulator.lastTurnCacheCreationTokens,
     compactionCount: accumulator.compactionCount,
+    autoCompactionCount: accumulator.autoCompactionCount,
     sessionAgeMinutes,
     turnsSinceLastCompaction: accumulator.turnsSinceLastCompaction,
     messageCount: accumulator.messageCount,

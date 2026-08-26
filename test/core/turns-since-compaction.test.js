@@ -1,7 +1,7 @@
 'use strict';
 
-// Task 7 (see AGENTS.md "Keep harness-specific behavior out of the shared
-// core"): sessionAgeMinutes/lastActivityAgeMinutes measured wall-clock age,
+// See AGENTS.md "Keep harness-specific behavior out of the shared core":
+// sessionAgeMinutes/lastActivityAgeMinutes measured wall-clock age,
 // but lastActivityAgeMinutes was always ~0 in practice (Date.now() evaluated
 // in a hook that only fires because the user just typed) — a dead gate. This
 // field replaces it with something derivable purely from the transcript.

@@ -64,6 +64,23 @@ function harnessVersionOf(entry) {
   return entry.version;
 }
 
+// compactMetadata is undocumented private telemetry (see the format-drift
+// canary above) — normalized so the core never sees Claude-Code-specific
+// field names, per AGENTS.md "Keep harness-specific behavior out of the
+// shared core".
+function compactionOf(entry) {
+  if (entry.type !== 'system' || entry.subtype !== 'compact_boundary' || !entry.compactMetadata) {
+    return null;
+  }
+  const m = entry.compactMetadata;
+  return {
+    trigger: m.trigger || null,
+    preTokens: typeof m.preTokens === 'number' ? m.preTokens : null,
+    postTokens: typeof m.postTokens === 'number' ? m.postTokens : null,
+    durationMs: typeof m.durationMs === 'number' ? m.durationMs : null,
+  };
+}
+
 // Maps a validated entry to NormalizedTranscriptEntry.
 function normalizeEntry(entry) {
   const { usage, model = null } = entry.message || {};
@@ -80,6 +97,7 @@ function normalizeEntry(entry) {
           }
         : null,
     isCompactionBoundary: entry.type === 'system' && entry.subtype === 'compact_boundary',
+    compaction: compactionOf(entry),
     sessionId: entry.sessionId || null,
     cwd: entry.cwd || null,
     gitBranch: entry.gitBranch || null,
