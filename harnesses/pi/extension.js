@@ -123,5 +123,8 @@ function WardenPiExtension(pi, { logFilePath, notifyOpts = {} } = {}) {
   });
 }
 
-module.exports = { WardenPiExtension, createSessionTracker, respondFor };
+module.exports = WardenPiExtension;
+module.exports.WardenPiExtension = WardenPiExtension;
+module.exports.createSessionTracker = createSessionTracker;
+module.exports.respondFor = respondFor;
 module.exports.default = WardenPiExtension;
