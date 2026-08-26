@@ -80,12 +80,16 @@ function applyTimestamp(accumulator, entry) {
   accumulator.lastTimestamp = entry.timestamp;
 }
 
-// Compaction resets the growth window: token counts before a compaction
-// don't predict growth after one, since the context was just rewritten.
+// Compaction resets the growth window and last-turn usage: token counts from
+// before a compaction don't predict growth after one, and leaving
+// lastTurnContextTokens at its pre-compaction value would make contextUsedTokens
+// falsely report the old (larger) size until the next assistant turn's real
+// usage lands.
 function applyCompactionBoundary(accumulator, entry) {
   if (!entry.isCompactionBoundary) return;
   accumulator.compactionCount += 1;
   accumulator.recentTurnTokens = [];
+  accumulator.lastTurnContextTokens = 0;
 }
 
 function applyAssistantUsage(accumulator, entry) {
