@@ -66,6 +66,22 @@ as a hook (`npm run setup` does this, or see `.claude/settings.json.example`).
 
 See `AGENTS.md` for design invariants and threshold rationale.
 
+## References
+
+Sources backing the thresholds in `decide.js` (full detail in that file's
+comments):
+
+| Source | Used for |
+|---|---|
+| Anthropic `clear_tool_uses_20250919` default | Compact floor |
+| Gemini 2.5 technical report (arXiv:2507.06261) | Compact floor |
+| LOCA-bench (arXiv:2602.07962) | Compact floor |
+| MindStudio context-rot writeup, 2026 | Compact floor |
+| Chroma Context Rot | Compact floor |
+| Bai et al. (arXiv:2604.22750) | Self-prediction correlation, cache-thrash |
+| Lee et al. 2026 (arXiv:2602.14798) | Cyclic tool-call loop detection |
+| Augment Code, 2026 | Handoff floor |
+
 ## Known limitations
 
 - No context window resolves → warden reports `UNKNOWN` rather than
