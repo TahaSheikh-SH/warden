@@ -189,9 +189,15 @@ function repeatedFileAccessObservation(state) {
 const CYCLE_MIN_LENGTH = 2;
 const CYCLE_MIN_REPEATS = 2;
 
+// null breaks the key sequence (treated as non-matching), the same way a
+// missing toolName already does. Without this, every path-less call (Bash,
+// or any custom tool with no single file target) collapsed to the same key
+// (e.g. "Bash:"), so two entirely different shell commands were
+// indistinguishable — the file-oriented signature this rule's citation
+// actually supports requires a real target path to compare.
 function toolCallKey(call) {
-  if (!call || !call.toolName) return null;
-  return `${call.toolName}:${call.targetPath || ''}`;
+  if (!call || !call.toolName || !call.targetPath) return null;
+  return `${call.toolName}:${call.targetPath}`;
 }
 
 // Smallest-first: checks whether the trailing `cycleLength` calls exactly
@@ -235,10 +241,11 @@ function isCyclicToolCallLoop(state) {
 // re-paying ~1.25x base input for a full prefix rewrite every turn (Bai et
 // al. 2026 — input tokens dominate agentic cost even with caching enabled;
 // Manus reports a 10x cost reduction from KV-cache discipline). Gate B
-// degrades to 3/4: Codex has no cache-write analog
-// (lastTurnCacheCreationTokens stays null there), so the streak never forms
-// and this rule silently never fires — the same stand-down-on-null pattern as
-// every other degraded signal, not a special case.
+// degrades to 3/4: Codex has no cache-write analog (cacheCreationTokens
+// stays null there per core/resourceStateCore.js applyAssistantUsage), so
+// consecutiveCacheThrashTurns never starts a streak and this rule silently
+// never fires — the same stand-down-on-null pattern as every other degraded
+// signal, not a special case.
 //
 // No sixth action: this rides alongside whatever action the RULES pipeline
 // already picked (unlike the observations above, which are restricted to
@@ -255,13 +262,22 @@ function cacheThrashObservation(state) {
   );
 }
 
+// Render null as "unknown" rather than formatting a fabricated 0.
+function formatPct(pct) {
+  return pct === null ? 'unknown' : `${(pct * 100).toFixed(1)}%`;
+}
+
+function formatMinutes(minutes) {
+  return minutes === null ? 'unknown' : `${minutes.toFixed(0)}m`;
+}
+
 function withinAllThresholds(state) {
   return {
     action: ACTIONS.CONTINUE,
     reason:
-      `context used ${(state.contextUsedPct * 100).toFixed(1)}%, ` +
+      `context used ${formatPct(state.contextUsedPct)}, ` +
       `${state.compactionCount} compactions, ` +
-      `${state.sessionAgeMinutes.toFixed(0)}m old — within thresholds`,
+      `${formatMinutes(state.sessionAgeMinutes)} old — within thresholds`,
   };
 }
 

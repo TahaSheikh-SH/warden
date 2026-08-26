@@ -65,6 +65,21 @@ describe('pi extension createSessionTracker', () => {
     assert.equal(state.contextWindowTokens, undefined);
     assert.equal(state.projectedTurnsUntilOverflow, null);
   });
+
+  // Pin, not a regression test: with no percent and no usable contextWindow,
+  // contextUsedPct must be null (unmeasured), matching
+  // core/resourceStateCore.js finalizeAccumulator's null-not-zero
+  // convention. Today this has no observable effect on decide() — a state
+  // with contextWindowTokens <= 0 is already rejected by
+  // isContextUsageTrustworthy before contextUsedPct is read — so this pins
+  // the value for the day a rule reads contextUsedPct directly, rather than
+  // asserting a behavior change that doesn't yet exist.
+  test('no percent and no usable contextWindow pins contextUsedPct to null, not 0', () => {
+    const logFilePath = path.join(os.tmpdir(), `warden-pi-test-${process.hrtime.bigint()}.jsonl`);
+    const tracker = createSessionTracker({ logFilePath });
+    const state = tracker.onTurnEnd({ tokens: 500 }); // no percent, no contextWindow
+    assert.equal(state.contextUsedPct, null);
+  });
 });
 
 describe('WardenPiExtension', () => {
@@ -184,6 +199,51 @@ describe('WardenPiExtension nudge dedup', () => {
     handlers.turn_end({ type: 'turn_end' }, ctx); // new action -> notifies again
 
     assert.equal(notifications.length, 2);
+  });
+});
+
+describe('WardenPiExtension untrustworthy usage gate', () => {
+  // Regression: the other three adapters (native.js, codex/actuator.js,
+  // opencode/plugin.js) all bail on isContextUsageTrustworthy(state) before
+  // calling decide(). Pi called decide() unconditionally, so a usage snapshot
+  // with no contextWindow/percent (pct collapses to 0, a fabricated
+  // "everything's fine" reading) produced a real CONTINUE decision and could
+  // notify on it — the harness telling the user the session is safe on a
+  // reading it cannot actually measure.
+  test('no contextWindow/percent produces no decision, no log write, no notify', () => {
+    const logFilePath = path.join(
+      os.tmpdir(),
+      `warden-pi-test-untrustworthy-${process.hrtime.bigint()}.jsonl`,
+    );
+    const handlers = {};
+    const pi = {
+      on(event, handler) {
+        handlers[event] = handler;
+      },
+    };
+    WardenPiExtension(pi, { logFilePath });
+
+    const notifications = [];
+    const ctx = {
+      hasUI: true,
+      // No contextWindow, no percent — isContextUsageTrustworthy must read
+      // this as untrustworthy (pct would otherwise fabricate 0%, "safe").
+      // tokens is deliberately over the absolute compact-token floor, so a
+      // pre-fix decide() call would still fire COMPACT off the absolute
+      // floor alone and notify on it — the gate must suppress that too, the
+      // same way native.js/codex/opencode suppress an absolute-floor firing
+      // whenever the window is unknown.
+      getContextUsage: () => ({ tokens: 150000 }),
+      ui: { notify: (message, severity) => notifications.push({ message, severity }) },
+    };
+
+    handlers.turn_end({ type: 'turn_end' }, ctx);
+
+    assert.equal(notifications.length, 0, 'must not notify on an untrustworthy reading');
+    assert.ok(
+      !fs.existsSync(logFilePath) || fs.readFileSync(logFilePath, 'utf8').trim() === '',
+      'must not log a decision made on an untrustworthy reading',
+    );
   });
 });
 

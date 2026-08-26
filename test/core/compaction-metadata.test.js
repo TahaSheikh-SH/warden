@@ -44,25 +44,4 @@ describe('compaction metadata', () => {
     ]);
     assert.equal(state.contextUsedTokens, 0);
   });
-
-  test('tracks autoCompactionCount separately from compactionCount, only for auto triggers', async () => {
-    const state = await reduceTranscriptEntries([
-      assistantTurn({ inputTokens: 200000, outputTokens: 5, cacheReadTokens: 0 }),
-      compactionBoundary({
-        trigger: 'auto',
-        preTokens: 200000,
-        postTokens: 30000,
-        durationMs: 1000,
-      }),
-      assistantTurn({ inputTokens: 200000, outputTokens: 5, cacheReadTokens: 0 }),
-      compactionBoundary({
-        trigger: 'manual',
-        preTokens: 200000,
-        postTokens: 30000,
-        durationMs: 1000,
-      }),
-    ]);
-    assert.equal(state.compactionCount, 2);
-    assert.equal(state.autoCompactionCount, 1);
-  });
 });

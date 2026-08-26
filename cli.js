@@ -41,7 +41,11 @@ async function main() {
     : 'unknown window';
   console.log(`context       ${state.contextUsedTokens.toLocaleString()} / ${window}`);
   console.log(`compactions   ${state.compactionCount}`);
-  console.log(`session age   ${state.sessionAgeMinutes.toFixed(0)}m`);
+  // null means no entry ever carried a timestamp — display that as unknown
+  // rather than formatting a fabricated 0m.
+  const sessionAge =
+    state.sessionAgeMinutes === null ? 'unknown' : `${state.sessionAgeMinutes.toFixed(0)}m`;
+  console.log(`session age   ${sessionAge}`);
   console.log(`messages      ${state.messageCount}`);
   console.log('');
 

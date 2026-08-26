@@ -1,6 +1,6 @@
 'use strict';
 
-// Task 14: cache-thrash rule needs a consecutive-turn streak counter — write
+// The cache-thrash rule needs a consecutive-turn streak counter — a write
 // with no read means the 5-minute TTL likely expired between turns.
 
 const { test, describe } = require('node:test');

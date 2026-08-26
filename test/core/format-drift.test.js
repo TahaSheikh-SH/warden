@@ -64,6 +64,42 @@ describe('assistantUsageCount', () => {
     assert.equal(state.assistantUsageCount, 0);
     assert.equal(state.messageCount, 2);
   });
+
+  // Regression: a usage *object* can be present yet carry zero real
+  // tokens — e.g. claude-code/transcript.js coerces every missing field with
+  // `|| 0`, so renaming a field *inside* usage (input_tokens -> prompt_tokens)
+  // still produces `{inputTokens: 0, outputTokens: 0, ...}`, an object that
+  // is truthy but measures nothing. Counting presence alone made the canary
+  // structurally blind to this class of drift.
+  test('stays 0 when every usage object is present but sums to zero real tokens', () => {
+    const accumulator = initialAccumulator();
+    for (let i = 0; i < 10; i += 1) {
+      foldEntry(
+        accumulator,
+        entry({
+          type: 'assistant',
+          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+        }),
+      );
+    }
+    const state = finalizeAccumulator(accumulator);
+    assert.equal(state.assistantUsageCount, 0);
+    assert.equal(state.messageCount, 10);
+    assert.equal(isFormatDriftDetected(state), true);
+  });
+
+  test('counts a usage object with only cache-creation tokens as measured', () => {
+    const accumulator = initialAccumulator();
+    foldEntry(
+      accumulator,
+      entry({
+        type: 'assistant',
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 50 },
+      }),
+    );
+    const state = finalizeAccumulator(accumulator);
+    assert.equal(state.assistantUsageCount, 1);
+  });
 });
 
 // One shared rule so every file-streaming adapter (claude-code, codex, ...)

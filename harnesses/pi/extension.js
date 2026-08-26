@@ -10,6 +10,7 @@ const {
   computeGrowthProjection,
   GROWTH_WINDOW_TURNS,
   TOOL_CALL_WINDOW,
+  isContextUsageTrustworthy,
 } = require('../../core/resourceStateCore');
 const { nudgeMessageFor } = require('../../actuators/messages');
 const { logDecision } = require('../../actuators/logStore');
@@ -60,12 +61,18 @@ function createSessionTracker({ logFilePath } = {}) {
       return {
         contextWindowTokens,
         contextUsedTokens,
+        // null, not 0 — no percent and no usable window means the read is
+        // unmeasured, not measured-empty (see core/resourceStateCore.js
+        // finalizeAccumulator). Masked today by isContextUsageTrustworthy's
+        // own contextWindowTokens > 0 check, which already stands this path
+        // down before contextUsedPct is ever read — kept for consistency and
+        // for the day a rule reads contextUsedPct directly.
         contextUsedPct:
           usage.percent != null
             ? usage.percent / 100
             : contextWindowTokens > 0
               ? contextUsedTokens / contextWindowTokens
-              : 0,
+              : null,
         contextGrowthPerTurn,
         projectedTurnsUntilOverflow,
         compactionCount,
@@ -115,6 +122,11 @@ function WardenPiExtension(pi, { logFilePath, notifyOpts = {} } = {}) {
     if (!usage || usage.tokens == null) return;
 
     const state = tracker.onTurnEnd(usage);
+    // Unknown or too-small window — refuse to act, same as
+    // native.js/codex/opencode (AGENTS.md: enforcement is asymmetric by
+    // harness, but every harness must stand down on an untrustworthy
+    // reading the same way).
+    if (!isContextUsageTrustworthy(state)) return;
     const decision = decide(state);
     if (decision.action === ACTIONS.CONTINUE) return;
 

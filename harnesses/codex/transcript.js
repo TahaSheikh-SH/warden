@@ -34,11 +34,18 @@ function handleCompaction(base) {
 
 function handleEventMsg(base, entry) {
   if (!entry.payload || entry.payload.type !== 'token_count') return base;
+  // token_count IS the assistant-turn marker on Codex — flip type as soon as
+  // the event is recognized, before checking whether the usage payload
+  // parsed. Waiting for last_token_usage to parse first used to move
+  // messageCount and assistantUsageCount in lockstep, making the
+  // format-drift canary (messageCount > N && assistantUsageCount === 0)
+  // structurally unreachable on this harness — a renamed/missing usage
+  // field just silently kept both counters at the same value forever.
+  base.type = 'assistant';
   const info = entry.payload.info;
-  if (!info || !info.last_token_usage) return base;
+  if (!info || !info.last_token_usage) return base; // usage stays null — unmeasured, not zero
 
   const usage = info.last_token_usage;
-  base.type = 'assistant';
   base.usage = {
     inputTokens: usage.input_tokens || 0,
     outputTokens: usage.output_tokens || 0,

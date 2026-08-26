@@ -60,7 +60,7 @@ describe('getLastNudgedAction', () => {
 });
 
 describe('respondFor STOP', () => {
-  // Task 2: exit code 2 on UserPromptSubmit erases the user's prompt
+  // Exit code 2 on UserPromptSubmit erases the user's prompt
   // (Claude Code docs) — STOP must never hard-block on this harness.
   test('STOP never returns a non-zero exit code', () => {
     const { exitCode, output, stderr } = respondFor(ACTIONS.STOP, ['handoff ignored 5x']);

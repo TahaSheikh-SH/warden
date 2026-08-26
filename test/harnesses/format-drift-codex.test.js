@@ -15,6 +15,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { evaluateCodexSession } = require('../../harnesses/codex/actuator');
+const { normalizeEntry } = require('../../harnesses/codex/transcript');
 
 function tempTranscriptPath() {
   return path.join(os.tmpdir(), `warden-format-drift-codex-test-${process.hrtime.bigint()}.jsonl`);
@@ -22,6 +23,25 @@ function tempTranscriptPath() {
 
 function sessionMetaLine() {
   return JSON.stringify({ type: 'session_meta', payload: { id: 'abc', cwd: '/repo' } });
+}
+
+// renamed_token_usage line simulates a Codex payload where
+// `last_token_usage` was renamed (e.g. `token_usage`) — before the fix,
+// handleEventMsg only set base.type = 'assistant' once last_token_usage
+// parsed, so messageCount and assistantUsageCount moved in lockstep and
+// the drift canary (messageCount > 3 && assistantUsageCount === 0) was
+// structurally unreachable on Codex.
+function renamedTokenUsageLine() {
+  return JSON.stringify({
+    type: 'event_msg',
+    payload: {
+      type: 'token_count',
+      info: {
+        token_usage: { input_tokens: 100, output_tokens: 10 },
+        model_context_window: 258400,
+      },
+    },
+  });
 }
 
 describe('codex format-drift detection', () => {
@@ -38,6 +58,29 @@ describe('codex format-drift detection', () => {
         contextWindowTokens: 100000,
       });
       assert.equal(state.driftDetected, false);
+    } finally {
+      fs.rmSync(sessionFilePath, { force: true });
+    }
+  });
+
+  test('token_count event marks the entry assistant even when last_token_usage is renamed away', () => {
+    const normalized = normalizeEntry(JSON.parse(renamedTokenUsageLine()));
+    assert.equal(normalized.type, 'assistant');
+    assert.equal(normalized.usage, null);
+  });
+
+  test('10 renamed-field token_count lines sets driftDetected — the canary must actually fire on Codex', async () => {
+    const sessionFilePath = tempTranscriptPath();
+    try {
+      const lines = Array.from({ length: 10 }, () => renamedTokenUsageLine());
+      fs.writeFileSync(sessionFilePath, lines.join('\n') + '\n');
+
+      const { state } = await evaluateCodexSession(sessionFilePath, {
+        contextWindowTokens: 100000,
+      });
+      assert.equal(state.messageCount, 10);
+      assert.equal(state.assistantUsageCount, 0);
+      assert.equal(state.driftDetected, true);
     } finally {
       fs.rmSync(sessionFilePath, { force: true });
     }

@@ -1,7 +1,7 @@
 'use strict';
 
-// Task 12: response_item was previously unhandled — every Codex tool call
-// was discarded. Verified against a real rollout, see
+// response_item was previously unhandled — every Codex tool call was
+// discarded. Verified against a real rollout, see
 // reference/harness-capability-matrix.md.
 
 const { test, describe } = require('node:test');

@@ -91,12 +91,25 @@ function transcriptCompactedAfter(sessionKey, sinceTimestamp) {
   return compactionsAfter(sessionKey, sinceTimestamp).length > 0;
 }
 
+// contextUsedPct is null when the context window was unmeasurable
+// (core/resourceStateCore.js finalizeAccumulator) — a real "unknown", not a
+// measured 0%. count tallies every entry for the action regardless;
+// measuredCount tallies only entries that actually contributed to
+// sumContextPct, so a consumer computing an average divides by the right
+// denominator instead of folding unknowns in as zeros.
 function tallyByAction(entries) {
   const byAction = {};
   for (const entry of entries) {
-    byAction[entry.action] = byAction[entry.action] || { count: 0, sumContextPct: 0 };
+    byAction[entry.action] = byAction[entry.action] || {
+      count: 0,
+      measuredCount: 0,
+      sumContextPct: 0,
+    };
     byAction[entry.action].count += 1;
-    byAction[entry.action].sumContextPct += entry.contextUsedPct || 0;
+    if (entry.contextUsedPct != null) {
+      byAction[entry.action].measuredCount += 1;
+      byAction[entry.action].sumContextPct += entry.contextUsedPct;
+    }
   }
   return byAction;
 }
@@ -105,8 +118,8 @@ function tallyByAction(entries) {
 // show a compact_boundary after that timestamp? Only a 'manual' trigger is
 // warden's win — 'auto' means the harness compacted on its own (possibly
 // unrelated to the nudge), and counting it inflates the headline metric.
-// compactMetadata.trigger is Claude-Code-only (see plan.md Task 9): a
-// harness that never sets it lands in the unknown-trigger bucket, tallied
+// compactMetadata.trigger is Claude-Code-only: a harness that never sets
+// it lands in the unknown-trigger bucket, tallied
 // but not claimed as follow-through.
 function classifyNudges(entries, nudges) {
   const nudgesByHarness = {};
@@ -208,13 +221,15 @@ async function main() {
 
   console.log(`${entries.length} logged decisions\n`);
   console.log('by action:');
-  for (const [action, { count, sumContextPct }] of Object.entries(byAction)) {
-    const avgPct = ((sumContextPct / count) * 100).toFixed(1);
-    console.log(`  ${action}: ${count} (avg context ${avgPct}%)`);
+  for (const [action, { count, measuredCount, sumContextPct }] of Object.entries(byAction)) {
+    const avgPct =
+      measuredCount > 0 ? `${((sumContextPct / measuredCount) * 100).toFixed(1)}%` : 'unknown';
+    const unmeasuredSuffix = measuredCount < count ? `, ${count - measuredCount} unmeasured` : '';
+    console.log(`  ${action}: ${count} (avg context ${avgPct}${unmeasuredSuffix})`);
   }
   console.log('');
 
-  // compactMetadata.trigger is Claude-Code-only (Gate B, plan.md Task 9): a
+  // compactMetadata.trigger is Claude-Code-only (Gate B): a
   // headline follow-through number computed only from those sessions and
   // read as warden's overall rate would be the same inflated-metric error
   // this rollup exists to fix, so every count below is labelled by harness.

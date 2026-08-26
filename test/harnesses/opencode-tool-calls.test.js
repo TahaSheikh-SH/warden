@@ -1,6 +1,6 @@
 'use strict';
 
-// Task 12: OpenCode has no on-disk transcript, so tool-call identity is
+// OpenCode has no on-disk transcript, so tool-call identity is
 // captured at the tool.execute.before hook (already wired for the STOP
 // block) rather than the event stream, which only sees the turn after
 // execution.
@@ -28,7 +28,9 @@ describe('createSessionEvaluator.recordToolCall', () => {
       'fallback',
     );
 
-    assert.deepEqual(result.state.recentToolCalls, [{ toolName: 'read', targetPath: 'a.js' }]);
+    assert.deepEqual(result.state.recentToolCalls, [
+      { toolName: 'read', targetPath: 'a.js', turnIndex: 0 },
+    ]);
   });
 });
 

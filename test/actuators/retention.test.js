@@ -1,6 +1,6 @@
 'use strict';
 
-// Task 5: ~/.warden/sessions and ~/.warden/cache accumulate one file per
+// ~/.warden/sessions and ~/.warden/cache accumulate one file per
 // session forever, and *.bak.<epoch> files pile up beside every settings
 // file setup.js touches. sweepDirectory is the one shared primitive both use
 // — a size/age sweep on write, since SessionEnd (Claude Code only) isn't a

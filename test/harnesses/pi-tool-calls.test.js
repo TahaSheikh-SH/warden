@@ -1,6 +1,6 @@
 'use strict';
 
-// Task 12: pi.on('tool_call') was already wired for the STOP block — now it
+// pi.on('tool_call') was already wired for the STOP block — now it
 // also records tool-call identity into the tracker's trailing window.
 
 const { test, describe } = require('node:test');

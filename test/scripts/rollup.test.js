@@ -78,6 +78,23 @@ describe('rollup', () => {
     assert.equal(byAction.COMPACT.count, 1);
   });
 
+  // Regression: contextUsedPct is null when the context window was
+  // unmeasurable (core/resourceStateCore.js finalizeAccumulator) — a
+  // real "unknown", not a measured 0%. Folding it into sumContextPct with
+  // `|| 0` drags the average down for every unknown-window entry. count
+  // still counts every entry (measured or not); measuredCount tracks only
+  // entries that actually contributed to sumContextPct, so consumers divide
+  // by the right denominator.
+  test('excludes null contextUsedPct entries from the average, via a separate measuredCount', () => {
+    const { byAction } = rollup([
+      { action: 'CONTINUE', contextUsedPct: 0.5 },
+      { action: 'CONTINUE', contextUsedPct: null },
+    ]);
+    assert.equal(byAction.CONTINUE.count, 2);
+    assert.equal(byAction.CONTINUE.measuredCount, 1);
+    assert.ok(Math.abs(byAction.CONTINUE.sumContextPct - 0.5) < 1e-9);
+  });
+
   test('counts a HANDOFF/STOP block as overridden when a later entry exists for the same sessionKey', () => {
     const { blocks, blocksOverridden } = rollup([
       { action: 'HANDOFF', sessionKey: 's1', timestamp: '2026-01-01T00:00:00Z' },

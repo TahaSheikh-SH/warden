@@ -23,6 +23,11 @@ async function backtest(sessionFilePath, stepLines) {
 
   console.log(`\n=== ${path.basename(sessionFilePath)} (${totalLines} lines) ===`);
 
+  // null, not a fabricated 0, when unmeasurable — render "unknown" rather
+  // than formatting a fake number.
+  const pctDisplay = (pct) => (pct === null ? 'unknown' : `${(pct * 100).toFixed(0)}%`);
+  const ageDisplay = (minutes) => (minutes === null ? 'unknown' : `${minutes.toFixed(0)}m`);
+
   let lastAction = null;
   for (const lineNum of checkpoints) {
     const state = await buildResourceState(sessionFilePath, { maxLines: lineNum });
@@ -30,8 +35,8 @@ async function backtest(sessionFilePath, stepLines) {
     if (action !== lastAction) {
       console.log(
         `  line ${lineNum}/${totalLines}: ${action} ` +
-          `(context ${(state.contextUsedPct * 100).toFixed(0)}%, ` +
-          `${state.compactionCount} compactions, ${state.sessionAgeMinutes.toFixed(0)}m) — ${reasons[0]}`,
+          `(context ${pctDisplay(state.contextUsedPct)}, ` +
+          `${state.compactionCount} compactions, ${ageDisplay(state.sessionAgeMinutes)}) — ${reasons[0]}`,
       );
       lastAction = action;
     }
@@ -40,7 +45,7 @@ async function backtest(sessionFilePath, stepLines) {
   const finalState = await buildResourceState(sessionFilePath);
   console.log(
     `  actual end state: ${finalState.compactionCount} real compaction(s), ` +
-      `final context ${(finalState.contextUsedPct * 100).toFixed(0)}%, ` +
+      `final context ${pctDisplay(finalState.contextUsedPct)}, ` +
       `${finalState.messageCount} assistant turns`,
   );
 }

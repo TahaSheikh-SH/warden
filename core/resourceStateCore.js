@@ -31,14 +31,18 @@
 //     toolCalls: Array<{toolName: string, targetPath: string | null}>
 //       (optional, defaults to none — tool-call identity, available on all
 //       four harnesses. targetPath is null when a tool call has no single
-//       file target, e.g. Bash.)
+//       file target, e.g. Bash. No turnIndex here — the core stamps that
+//       itself in applyToolCalls below from its own turn counter, so no
+//       adapter needs to supply it.)
 //   }
 
 const GROWTH_WINDOW_TURNS = 5;
 
-// Bounded trailing window of tool calls, same shape as recentTurnTokens.
-// Not reset on compaction — cross-boundary signals need visibility across
-// the boundary, unlike token growth which genuinely resets.
+// Bounded trailing window of tool calls, counted in distinct turns rather
+// than raw calls: a call bound lets one tool-heavy turn evict every earlier
+// turn in a single fold, blinding the cycle detector exactly when it matters
+// most. Not reset on compaction — cross-boundary signals need visibility
+// across the boundary, unlike token growth which genuinely resets.
 const TOOL_CALL_WINDOW = 20;
 
 // Shared with harnesses/pi/extension.js, which tracks growth live instead of
@@ -51,7 +55,7 @@ function computeGrowthProjection(recentTurnTokens, contextWindowTokens, contextU
       : null;
 
   const projectedTurnsUntilOverflow =
-    contextGrowthPerTurn && contextGrowthPerTurn > 0 && Number.isFinite(contextWindowTokens)
+    contextGrowthPerTurn > 0 && Number.isFinite(contextWindowTokens)
       ? (contextWindowTokens - contextUsedTokens) / contextGrowthPerTurn
       : null;
 
@@ -70,24 +74,14 @@ function initialAccumulator() {
     firstTimestamp: null,
     lastTimestamp: null,
     messageCount: 0,
-    // How many assistant entries actually carried a parsed usage object, vs.
-    // messageCount below which counts assistant entries regardless. See
-    // isFormatDriftDetected below.
+    // How many assistant entries actually measured real usage (sum of
+    // parsed token fields > 0), vs. messageCount above which counts
+    // assistant entries regardless. A usage object can be present yet
+    // measure nothing (e.g. a harness renaming a field inside it, coerced to
+    // 0 by `|| 0`) — see applyAssistantUsage and isFormatDriftDetected below.
     assistantUsageCount: 0,
-    totalInputTokens: 0,
-    totalOutputTokens: 0,
-    totalCacheReadTokens: 0,
-    totalCacheCreationTokens: 0,
     compactionCount: 0,
-    // Auto triggers are warden being late (the harness compacted before
-    // warden's own COMPACT nudge landed) — a distinct signal from a manual
-    // compaction, diagnostic only.
-    autoCompactionCount: 0,
     lastTurnContextTokens: 0,
-    lastTurnCacheReadTokens: 0,
-    // null until an assistant turn actually reports a number — see
-    // applyAssistantUsage for why unknown must not collapse into 0.
-    lastTurnCacheCreationTokens: null,
     recentTurnTokens: [],
     turnsSinceLastCompaction: 0,
     recentToolCalls: [],
@@ -131,9 +125,6 @@ function applyCompactionBoundary(accumulator, entry) {
       ? entry.compaction.postTokens
       : 0;
   accumulator.turnsSinceLastCompaction = 0;
-  if (entry.compaction && entry.compaction.trigger === 'auto') {
-    accumulator.autoCompactionCount += 1;
-  }
 }
 
 function applyAssistantUsage(accumulator, entry) {
@@ -142,7 +133,6 @@ function applyAssistantUsage(accumulator, entry) {
 
   const usage = entry.usage;
   if (!usage) return;
-  accumulator.assistantUsageCount += 1;
   accumulator.turnsSinceLastCompaction += 1;
 
   const input = usage.inputTokens || 0;
@@ -154,13 +144,16 @@ function applyAssistantUsage(accumulator, entry) {
   const cacheCreation =
     typeof usage.cacheCreationTokens === 'number' ? usage.cacheCreationTokens : null;
 
-  accumulator.totalInputTokens += input;
-  accumulator.totalOutputTokens += output;
-  accumulator.totalCacheReadTokens += cacheRead;
-  accumulator.totalCacheCreationTokens += cacheCreation || 0;
+  // Format-drift canary needs "usage actually measured", not merely "a usage
+  // object is present": a harness that renames a field *inside* usage (e.g.
+  // input_tokens -> prompt_tokens) still builds a usage object via the `|| 0`
+  // coercions below (claude-code/transcript.js), so presence alone can't
+  // distinguish real usage from an all-zero coercion. See
+  // isFormatDriftDetected below.
+  if (input + output + cacheRead + (cacheCreation || 0) > 0) {
+    accumulator.assistantUsageCount += 1;
+  }
 
-  accumulator.lastTurnCacheReadTokens = cacheRead;
-  accumulator.lastTurnCacheCreationTokens = cacheCreation;
   const isThrashTurn = cacheCreation !== null && cacheCreation > 0 && cacheRead === 0;
   accumulator.consecutiveCacheThrashTurns = isThrashTurn
     ? accumulator.consecutiveCacheThrashTurns + 1
@@ -172,13 +165,23 @@ function applyAssistantUsage(accumulator, entry) {
   }
 }
 
+// messageCount, not turnsSinceLastCompaction, stamps turnIndex: the latter
+// resets to 0 on every compaction boundary, so two tool calls on opposite
+// sides of a boundary could collide on the same post-reset value and look
+// like the same turn. messageCount is monotonic, so equal turnIndex always
+// means the same turn — the only property consumers rely on.
 function applyToolCalls(accumulator, entry) {
   if (!entry.toolCalls || entry.toolCalls.length === 0) return;
-  accumulator.recentToolCalls.push(...entry.toolCalls);
-  const overflow = accumulator.recentToolCalls.length - TOOL_CALL_WINDOW;
-  if (overflow > 0) {
-    accumulator.recentToolCalls.splice(0, overflow);
-  }
+  const stamped = entry.toolCalls.map((call) => ({ ...call, turnIndex: accumulator.messageCount }));
+  accumulator.recentToolCalls.push(...stamped);
+
+  // Set preserves insertion order, so this stays chronological.
+  const cutoff = [...new Set(accumulator.recentToolCalls.map((call) => call.turnIndex))].slice(
+    -TOOL_CALL_WINDOW,
+  )[0];
+  accumulator.recentToolCalls = accumulator.recentToolCalls.filter(
+    (call) => call.turnIndex >= cutoff,
+  );
 }
 
 // Mutates and returns accumulator, so a caller holding one across turns can
@@ -223,7 +226,11 @@ function finalizeAccumulator(accumulator, opts = {}) {
     opts.contextWindowTokens || accumulator.detectedContextWindowTokens || null;
 
   const contextUsedTokens = accumulator.lastTurnContextTokens;
-  const contextUsedPct = contextWindowTokens > 0 ? contextUsedTokens / contextWindowTokens : 0;
+  // null, not 0 — a window-less session's usage is unmeasured, not measured
+  // empty. Every consumer rule compares with >=, which stands down correctly
+  // on null; only display/log paths needed updating to render "unknown"
+  // instead of formatting a fabricated zero.
+  const contextUsedPct = contextWindowTokens > 0 ? contextUsedTokens / contextWindowTokens : null;
 
   const { contextGrowthPerTurn, projectedTurnsUntilOverflow } = computeGrowthProjection(
     accumulator.recentTurnTokens,
@@ -231,10 +238,12 @@ function finalizeAccumulator(accumulator, opts = {}) {
     contextUsedTokens,
   );
 
+  // null, not 0 — no timestamp was ever seen, so age is unmeasured, not
+  // measured-instant.
   const sessionAgeMinutes =
     accumulator.firstTimestamp && accumulator.lastTimestamp
       ? (new Date(accumulator.lastTimestamp) - new Date(accumulator.firstTimestamp)) / 60000
-      : 0;
+      : null;
 
   return {
     sessionId: accumulator.sessionId,
@@ -246,15 +255,7 @@ function finalizeAccumulator(accumulator, opts = {}) {
     contextUsedPct,
     contextGrowthPerTurn,
     projectedTurnsUntilOverflow,
-    totalInputTokens: accumulator.totalInputTokens,
-    totalOutputTokens: accumulator.totalOutputTokens,
-    totalCacheReadTokens: accumulator.totalCacheReadTokens,
-    totalCacheCreationTokens: accumulator.totalCacheCreationTokens,
-    // Last-turn split, for a rule that needs cache traffic rather than size.
-    lastTurnCacheReadTokens: accumulator.lastTurnCacheReadTokens,
-    lastTurnCacheCreationTokens: accumulator.lastTurnCacheCreationTokens,
     compactionCount: accumulator.compactionCount,
-    autoCompactionCount: accumulator.autoCompactionCount,
     sessionAgeMinutes,
     turnsSinceLastCompaction: accumulator.turnsSinceLastCompaction,
     messageCount: accumulator.messageCount,

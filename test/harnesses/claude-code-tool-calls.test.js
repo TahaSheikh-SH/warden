@@ -1,7 +1,7 @@
 'use strict';
 
-// Task 12: Claude Code tool-call normalization reads tool_use blocks from the
-// transcript directly (not the PostToolUse hook) — see plan.md Task 12 step 1.
+// Claude Code tool-call normalization reads tool_use blocks from the
+// transcript directly, not from the PostToolUse hook.
 
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');

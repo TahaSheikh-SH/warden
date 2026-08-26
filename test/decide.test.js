@@ -44,8 +44,8 @@ describe('HANDOFF', () => {
     assert.equal(decision.action, ACTIONS.HANDOFF);
   });
 
-  // Task 3: handoffContextTokens (200000) had no valid citation and was
-  // deleted — see reference/source-verification.md. HANDOFF now has no
+  // handoffContextTokens (200000) had no valid citation and was deleted —
+  // see reference/source-verification.md. HANDOFF now has no
   // absolute-token floor, only the pct threshold above.
   test('no absolute token floor exists for HANDOFF — huge token count alone does not fire it', () => {
     const state = givenResourceState({ contextUsedPct: 0.1, contextUsedTokens: 999999999 });
@@ -127,7 +127,7 @@ describe('COMPACT', () => {
 });
 
 describe('CHECKPOINT', () => {
-  // Task 6: the decay backtest (reference/compaction-backtest.md) found no N
+  // The decay backtest (reference/compaction-backtest.md) found no N
   // at which repeated compaction measurably degrades a session — the
   // checkpointContextPct gate this rule used to require is gone. The rule now
   // fires on compactionCount alone, justified by measured cost (~55k
@@ -176,7 +176,7 @@ describe('CHECKPOINT', () => {
   });
 });
 
-// Task 3: pins every cited threshold value so an edit to the number fails
+// Pins every cited threshold value so an edit to the number fails
 // loudly here rather than silently drifting from its citation in
 // reference/source-verification.md / README.md's "Why these thresholds".
 describe('THRESHOLDS regression — every value must match its citation', () => {
@@ -193,7 +193,7 @@ describe('THRESHOLDS regression — every value must match its citation', () => 
   });
 });
 
-describe('Task 12 — repeated file access observation', () => {
+describe('repeated file access observation', () => {
   function withToolCalls(path, count, windowSize = count) {
     const calls = [];
     for (let i = 0; i < windowSize - count; i += 1) {
@@ -251,7 +251,7 @@ describe('Task 12 — repeated file access observation', () => {
   });
 });
 
-describe('Task 13 — cyclic tool-call loop suppresses COMPACT', () => {
+describe('cyclic tool-call loop suppresses COMPACT', () => {
   function alternatingCalls(pairA, pairB, repeats) {
     const calls = [];
     for (let i = 0; i < repeats; i += 1) {
@@ -271,13 +271,34 @@ describe('Task 13 — cyclic tool-call loop suppresses COMPACT', () => {
     assert.ok(decision.reasons.some((r) => r.includes('tool-call cycle detected')));
   });
 
-  test('does not fire on a single repeated call (Task 12 territory, not a cycle)', () => {
+  test('does not fire on a single repeated call (repeated access, not a cycle)', () => {
     const state = givenResourceState({
       contextUsedPct: THRESHOLDS.compactContextPct,
       recentToolCalls: [
         { toolName: 'Read', targetPath: 'a.js' },
         { toolName: 'Read', targetPath: 'a.js' },
         { toolName: 'Read', targetPath: 'a.js' },
+        { toolName: 'Read', targetPath: 'a.js' },
+      ],
+    });
+    const decision = decide(state);
+    assert.equal(decision.action, ACTIONS.COMPACT);
+  });
+
+  // Regression: toolCallKey used to collapse every path-less call (Bash,
+  // or any custom tool without a single file target) to the same key
+  // (`"Bash:"`), so two entirely different shell commands looked identical
+  // to the cycle detector. run-tests/read-file/run-different-tests/read-file
+  // is an extremely common debugging shape and must not be misread as a
+  // cycle — COMPACT is the correct call at this pct, not a downgrade to
+  // CHECKPOINT.
+  test('does not treat two different path-less Bash calls as a cycle', () => {
+    const state = givenResourceState({
+      contextUsedPct: THRESHOLDS.compactContextPct,
+      recentToolCalls: [
+        { toolName: 'Bash', targetPath: null },
+        { toolName: 'Read', targetPath: 'a.js' },
+        { toolName: 'Bash', targetPath: null },
         { toolName: 'Read', targetPath: 'a.js' },
       ],
     });
@@ -314,7 +335,7 @@ describe('Task 13 — cyclic tool-call loop suppresses COMPACT', () => {
   });
 });
 
-describe('Task 14 — cache-thrash observation', () => {
+describe('cache-thrash observation', () => {
   test('attaches an observation after 2 consecutive thrash turns, even under CONTINUE', () => {
     const state = givenResourceState({ consecutiveCacheThrashTurns: 2 });
     const decision = decide(state);

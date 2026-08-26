@@ -56,7 +56,6 @@ describe('buildResourceState incremental cache', () => {
 
       assert.equal(second.contextUsedTokens, fullRecompute.contextUsedTokens);
       assert.equal(second.messageCount, fullRecompute.messageCount);
-      assert.equal(second.totalInputTokens, fullRecompute.totalInputTokens);
       assert.equal(second.messageCount, 3);
     } finally {
       fs.rmSync(sessionFilePath, { force: true });
@@ -118,7 +117,91 @@ describe('buildResourceState incremental cache', () => {
 
       const second = await buildResourceState(sessionFilePath, { contextWindowTokens: 100000 });
       assert.equal(second.messageCount, 3);
-      assert.equal(second.totalInputTokens, 6000);
+      assert.equal(second.contextUsedTokens, 3000);
+    } finally {
+      fs.rmSync(sessionFilePath, { force: true });
+      fs.rmSync(cacheFilePath, { force: true });
+    }
+  });
+
+  // Regression: a cache written by an older warden build (missing a field
+  // the current fold logic assumes exists, e.g. recentToolCalls) used to
+  // throw `Cannot read properties of undefined (reading 'push')` on the next
+  // fold — and since writeAccumulatorCache is downstream of that throw, the
+  // poisoned cache was never replaced. Warden was then dead for the session
+  // until the 30-day sweep. A schema version on the cache payload lets a
+  // mismatch (or absence, for a cache predating the field entirely) be
+  // detected and invalidated before it's ever folded onto.
+  test('a cache with a schema-version mismatch is invalidated, not folded onto', async () => {
+    const sessionFilePath = tempTranscriptPath();
+    const cacheFilePath = cacheFileFor(sessionFilePath);
+    try {
+      fs.writeFileSync(
+        sessionFilePath,
+        [
+          assistantLine(1000, '2026-01-01T00:00:00Z'),
+          assistantLine(2000, '2026-01-01T00:01:00Z'),
+        ].join('\n') + '\n',
+      );
+
+      if (!fs.existsSync(path.dirname(cacheFilePath))) {
+        fs.mkdirSync(path.dirname(cacheFilePath), { recursive: true });
+      }
+      // Simulates a cache written by an old schema version — accumulator is
+      // missing recentToolCalls entirely, which would throw on the next fold
+      // if this cache were trusted and folded onto.
+      fs.writeFileSync(
+        cacheFilePath,
+        JSON.stringify({
+          schemaVersion: -1,
+          lineCount: 1,
+          byteOffset: 0,
+          fileSize: 1,
+          accumulator: { messageCount: 999 },
+        }),
+      );
+
+      const state = await buildResourceState(sessionFilePath, { contextWindowTokens: 100000 });
+      assert.equal(state.messageCount, 2, 'must recompute fresh, not trust the mismatched cache');
+      assert.equal(state.contextUsedTokens, 2000);
+    } finally {
+      fs.rmSync(sessionFilePath, { force: true });
+      fs.rmSync(cacheFilePath, { force: true });
+    }
+  });
+
+  test('a cache with no schemaVersion field at all (pre-versioning build) is invalidated', async () => {
+    const sessionFilePath = tempTranscriptPath();
+    const cacheFilePath = cacheFileFor(sessionFilePath);
+    try {
+      fs.writeFileSync(
+        sessionFilePath,
+        [
+          assistantLine(1000, '2026-01-01T00:00:00Z'),
+          assistantLine(2000, '2026-01-01T00:01:00Z'),
+        ].join('\n') + '\n',
+      );
+
+      if (!fs.existsSync(path.dirname(cacheFilePath))) {
+        fs.mkdirSync(path.dirname(cacheFilePath), { recursive: true });
+      }
+      // No schemaVersion key at all — the accumulator shape here is also
+      // missing recentToolCalls, reproducing the exact TypeError from the
+      // real regression (Cannot read properties of undefined (reading
+      // 'push')) if this cache were folded onto instead of invalidated.
+      fs.writeFileSync(
+        cacheFilePath,
+        JSON.stringify({
+          lineCount: 1,
+          byteOffset: 0,
+          fileSize: 1,
+          accumulator: { messageCount: 999, totalInputTokens: 0 },
+        }),
+      );
+
+      const state = await buildResourceState(sessionFilePath, { contextWindowTokens: 100000 });
+      assert.equal(state.messageCount, 2, 'must recompute fresh, not trust the versionless cache');
+      assert.equal(state.contextUsedTokens, 2000);
     } finally {
       fs.rmSync(sessionFilePath, { force: true });
       fs.rmSync(cacheFilePath, { force: true });
