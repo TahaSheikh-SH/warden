@@ -69,6 +69,7 @@ function initialAccumulator() {
     // applyAssistantUsage for why unknown must not collapse into 0.
     lastTurnCacheCreationTokens: null,
     recentTurnTokens: [],
+    turnsSinceLastCompaction: 0,
   };
 }
 
@@ -98,6 +99,7 @@ function applyCompactionBoundary(accumulator, entry) {
   accumulator.compactionCount += 1;
   accumulator.recentTurnTokens = [];
   accumulator.lastTurnContextTokens = 0;
+  accumulator.turnsSinceLastCompaction = 0;
 }
 
 function applyAssistantUsage(accumulator, entry) {
@@ -107,6 +109,7 @@ function applyAssistantUsage(accumulator, entry) {
   const usage = entry.usage;
   if (!usage) return;
   accumulator.assistantUsageCount += 1;
+  accumulator.turnsSinceLastCompaction += 1;
 
   const input = usage.inputTokens || 0;
   const output = usage.outputTokens || 0;
@@ -162,7 +165,6 @@ function isFormatDriftDetected({ lineCount, assistantUsageCount }) {
   return lineCount > FORMAT_DRIFT_LINE_THRESHOLD && assistantUsageCount === 0;
 }
 
-// Pure aside from Date.now() for lastActivityAgeMinutes.
 function finalizeAccumulator(accumulator, opts = {}) {
   // null, not an assumed default: guessing a window is Anthropic-specific
   // knowledge the core shouldn't hold, and guessing too large silently
@@ -184,10 +186,6 @@ function finalizeAccumulator(accumulator, opts = {}) {
       ? (new Date(accumulator.lastTimestamp) - new Date(accumulator.firstTimestamp)) / 60000
       : 0;
 
-  const lastActivityAgeMinutes = accumulator.lastTimestamp
-    ? (Date.now() - new Date(accumulator.lastTimestamp).getTime()) / 60000
-    : null;
-
   return {
     sessionId: accumulator.sessionId,
     cwd: accumulator.cwd,
@@ -207,7 +205,7 @@ function finalizeAccumulator(accumulator, opts = {}) {
     lastTurnCacheCreationTokens: accumulator.lastTurnCacheCreationTokens,
     compactionCount: accumulator.compactionCount,
     sessionAgeMinutes,
-    lastActivityAgeMinutes,
+    turnsSinceLastCompaction: accumulator.turnsSinceLastCompaction,
     messageCount: accumulator.messageCount,
     assistantUsageCount: accumulator.assistantUsageCount,
   };

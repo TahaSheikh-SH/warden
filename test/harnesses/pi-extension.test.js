@@ -43,6 +43,16 @@ describe('pi extension createSessionTracker', () => {
     assert.equal(state.contextGrowthPerTurn, null); // only one sample since the reset
   });
 
+  test('onCompact resets turnsSinceLastCompaction', () => {
+    const logFilePath = path.join(os.tmpdir(), `warden-pi-test-${process.hrtime.bigint()}.jsonl`);
+    const tracker = createSessionTracker({ logFilePath });
+    tracker.onTurnEnd({ tokens: 1000, contextWindow: 200000, percent: 0.5 });
+    tracker.onTurnEnd({ tokens: 2000, contextWindow: 200000, percent: 1 });
+    tracker.onCompact();
+    const state = tracker.onTurnEnd({ tokens: 100, contextWindow: 200000, percent: 0.05 });
+    assert.equal(state.turnsSinceLastCompaction, 1);
+  });
+
   test('missing usage.contextWindow does not propagate NaN into projectedTurnsUntilOverflow', () => {
     const logFilePath = path.join(os.tmpdir(), `warden-pi-test-${process.hrtime.bigint()}.jsonl`);
     const tracker = createSessionTracker({ logFilePath });

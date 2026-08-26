@@ -21,6 +21,7 @@ function createSessionTracker({ logFilePath } = {}) {
   const sessionKey = `pi-${startedAt}-${process.pid}`;
   let compactionCount = 0;
   let recentTurnTokens = [];
+  let turnsSinceLastCompaction = 0;
 
   return {
     sessionKey,
@@ -28,10 +29,12 @@ function createSessionTracker({ logFilePath } = {}) {
     onCompact() {
       compactionCount += 1;
       recentTurnTokens = []; // pre-compaction growth isn't representative anymore
+      turnsSinceLastCompaction = 0;
     },
     onTurnEnd(usage) {
       const contextWindowTokens = usage.contextWindow;
       const contextUsedTokens = usage.tokens || 0;
+      turnsSinceLastCompaction += 1;
 
       recentTurnTokens.push(contextUsedTokens);
       if (recentTurnTokens.length > GROWTH_WINDOW_TURNS) recentTurnTokens.shift();
@@ -55,8 +58,7 @@ function createSessionTracker({ logFilePath } = {}) {
         projectedTurnsUntilOverflow,
         compactionCount,
         sessionAgeMinutes: (Date.now() - startedAt) / 60000,
-        // Evaluated live right as the turn ended — no idle gap to measure.
-        lastActivityAgeMinutes: 0,
+        turnsSinceLastCompaction,
       };
     },
   };

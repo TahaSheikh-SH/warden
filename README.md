@@ -125,7 +125,7 @@ there.
 | `compactContextPct` | 70% | [Context Rot in AI Agents](https://www.mindstudio.ai/blog/context-rot-ai-agents-auto-compact-fix) (MindStudio) — engineering guidance, not peer-reviewed; degradation zone starts ~70-80% context capacity, recommends compacting at 0.7 to fire before it |
 | `handoffContextPct` | 92% | Tested — final safety margin |
 | `burnRateMinTurnsUntilOverflow`, `minPctForBurnRateTrigger` | 3 turns, 50% | Tested — catches fast-growing sessions before the static % threshold would |
-| `checkpointSessionAgeMinutes`, `activeSessionMaxIdleMinutes` | 240m, 30m | Tested — long sessions accrue risk beyond token count |
+| `checkpointTurnsSinceCompaction` | 300 | Local backtest (n=94 completed compaction epochs, 45 sessions): turns/epoch p50 104, p75 195, p90 289, max 596 — set above p90 to catch outliers without firing on the ordinary long tail. Replaces a prior wall-clock version whose idle guard (`Date.now()` vs. the transcript's last timestamp) always read ~0 in practice and never gated anything |
 
 There used to be a `handoffContextTokens: 200,000` absolute floor. It was
 deleted: the cited source (Augment Code) never made the claim attributed to

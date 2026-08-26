@@ -12,7 +12,7 @@ function givenResourceState(overrides = {}) {
     projectedTurnsUntilOverflow: null,
     compactionCount: 0,
     sessionAgeMinutes: 10,
-    lastActivityAgeMinutes: 1,
+    turnsSinceLastCompaction: 1,
     ...overrides,
   };
 }
@@ -159,28 +159,17 @@ describe('CHECKPOINT', () => {
     assert.equal(decision.action, ACTIONS.CHECKPOINT);
   });
 
-  test('session age tripwire fires when active session crosses age threshold', () => {
+  test('long-uncompacted-session tripwire fires at the turn threshold', () => {
     const state = givenResourceState({
-      sessionAgeMinutes: THRESHOLDS.checkpointSessionAgeMinutes,
-      lastActivityAgeMinutes: THRESHOLDS.activeSessionMaxIdleMinutes,
+      turnsSinceLastCompaction: THRESHOLDS.checkpointTurnsSinceCompaction,
     });
     const decision = decide(state);
     assert.equal(decision.action, ACTIONS.CHECKPOINT);
   });
 
-  test('session age tripwire does not fire when session is idle (not active)', () => {
+  test('long-uncompacted-session tripwire does not fire below the turn threshold', () => {
     const state = givenResourceState({
-      sessionAgeMinutes: THRESHOLDS.checkpointSessionAgeMinutes,
-      lastActivityAgeMinutes: THRESHOLDS.activeSessionMaxIdleMinutes + 1,
-    });
-    const decision = decide(state);
-    assert.notEqual(decision.action, ACTIONS.CHECKPOINT);
-  });
-
-  test('session age tripwire does not fire below age threshold', () => {
-    const state = givenResourceState({
-      sessionAgeMinutes: THRESHOLDS.checkpointSessionAgeMinutes - 1,
-      lastActivityAgeMinutes: THRESHOLDS.activeSessionMaxIdleMinutes,
+      turnsSinceLastCompaction: THRESHOLDS.checkpointTurnsSinceCompaction - 1,
     });
     const decision = decide(state);
     assert.notEqual(decision.action, ACTIONS.CHECKPOINT);
@@ -197,8 +186,7 @@ describe('THRESHOLDS regression — every value must match its citation', () => 
       compactContextPct: 0.7,
       compactContextTokens: 100000,
       checkpointCompactionCount: 2,
-      checkpointSessionAgeMinutes: 240,
-      activeSessionMaxIdleMinutes: 30,
+      checkpointTurnsSinceCompaction: 300,
       burnRateMinTurnsUntilOverflow: 3,
       minPctForBurnRateTrigger: 0.5,
     });
@@ -211,7 +199,7 @@ describe('STOP', () => {
       contextUsedPct: 0.99,
       compactionCount: 99,
       sessionAgeMinutes: 9999,
-      lastActivityAgeMinutes: 0,
+      turnsSinceLastCompaction: 9999,
       contextUsedTokens: 999999,
       contextGrowthPerTurn: 99999,
       projectedTurnsUntilOverflow: 0,

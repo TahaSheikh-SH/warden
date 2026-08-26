@@ -28,10 +28,12 @@ const THRESHOLDS = {
   // long context degrades quality, non-uniformly — not this specific number.
   compactContextTokens: 100000,
   checkpointCompactionCount: 2,
-  checkpointSessionAgeMinutes: 240,
-  // Idle sessions aren't "aging" in the resource sense, so age only
-  // applies while someone's actively working in it.
-  activeSessionMaxIdleMinutes: 30,
+  // Local backtest, 94 completed compaction epochs across 45 real sessions:
+  // turns/epoch p50 104, p75 195, p90 289, max 596. Set above p90 so this
+  // catches genuine outliers — a session running long on small per-turn
+  // deltas, the case token-based rules can't see — without firing on the
+  // ordinary long tail.
+  checkpointTurnsSinceCompaction: 300,
   // Fires COMPACT if trailing growth rate projects overflow within this
   // many turns, even below compactContextPct. Floored by
   // minPctForBurnRateTrigger so one volatile early turn can't trigger it.
@@ -124,16 +126,21 @@ function isRepeatedCompactionDegrading(state) {
   };
 }
 
-function isAgingActiveSession(state) {
-  const isActive =
-    state.lastActivityAgeMinutes !== null &&
-    state.lastActivityAgeMinutes <= THRESHOLDS.activeSessionMaxIdleMinutes;
-  if (!isActive || state.sessionAgeMinutes < THRESHOLDS.checkpointSessionAgeMinutes) return null;
+// Wall-clock session age (sessionAgeMinutes) with an idle guard was the prior
+// version of this rule — the idle guard was Date.now() vs. the transcript's
+// last timestamp, evaluated in a hook that only fires because the user just
+// typed, so it always read ~0 and never actually gated anything. Turns since
+// the last compaction is derivable purely from the transcript (no clock),
+// and catches the case token thresholds miss: a session running long on
+// small per-turn deltas that never crosses compactContextPct/Tokens.
+function isLongUncompactedSession(state) {
+  if (state.turnsSinceLastCompaction < THRESHOLDS.checkpointTurnsSinceCompaction) return null;
   return {
     action: ACTIONS.CHECKPOINT,
     reason:
-      `session age ${state.sessionAgeMinutes.toFixed(0)}m >= ` +
-      `${THRESHOLDS.checkpointSessionAgeMinutes}m checkpoint threshold`,
+      `${state.turnsSinceLastCompaction} turns since last compaction >= ` +
+      `${THRESHOLDS.checkpointTurnsSinceCompaction}-turn checkpoint threshold ` +
+      `(local backtest, n=94 epochs/45 sessions, p90=289)`,
   };
 }
 
@@ -156,7 +163,7 @@ const RULES = [
   isRepeatedCompactionDegrading,
   exceedsCompactThreshold,
   isBurstingBurnRate,
-  isAgingActiveSession,
+  isLongUncompactedSession,
 ];
 
 // Pure: ResourceState in, {action, reasons} out. Never emits STOP — that
