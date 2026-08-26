@@ -251,6 +251,89 @@ describe('Task 12 — repeated file access observation', () => {
   });
 });
 
+describe('Task 13 — cyclic tool-call loop suppresses COMPACT', () => {
+  function alternatingCalls(pairA, pairB, repeats) {
+    const calls = [];
+    for (let i = 0; i < repeats; i += 1) {
+      calls.push({ toolName: 'Read', targetPath: pairA });
+      calls.push({ toolName: 'Read', targetPath: pairB });
+    }
+    return calls;
+  }
+
+  test('detects an alternating A/B cycle and returns CHECKPOINT instead of COMPACT', () => {
+    const state = givenResourceState({
+      contextUsedPct: THRESHOLDS.compactContextPct,
+      recentToolCalls: alternatingCalls('a.js', 'b.js', 3),
+    });
+    const decision = decide(state);
+    assert.equal(decision.action, ACTIONS.CHECKPOINT);
+    assert.ok(decision.reasons.some((r) => r.includes('tool-call cycle detected')));
+  });
+
+  test('does not fire on a single repeated call (Task 12 territory, not a cycle)', () => {
+    const state = givenResourceState({
+      contextUsedPct: THRESHOLDS.compactContextPct,
+      recentToolCalls: [
+        { toolName: 'Read', targetPath: 'a.js' },
+        { toolName: 'Read', targetPath: 'a.js' },
+        { toolName: 'Read', targetPath: 'a.js' },
+        { toolName: 'Read', targetPath: 'a.js' },
+      ],
+    });
+    const decision = decide(state);
+    assert.equal(decision.action, ACTIONS.COMPACT);
+  });
+
+  test('does not fire on a single non-repeating pattern', () => {
+    const state = givenResourceState({
+      contextUsedPct: THRESHOLDS.compactContextPct,
+      recentToolCalls: [
+        { toolName: 'Read', targetPath: 'a.js' },
+        { toolName: 'Edit', targetPath: 'b.js' },
+        { toolName: 'Bash', targetPath: null },
+      ],
+    });
+    const decision = decide(state);
+    assert.equal(decision.action, ACTIONS.COMPACT);
+  });
+
+  test('does not suppress HANDOFF — cycle rule sits below it in priority', () => {
+    const state = givenResourceState({
+      contextUsedPct: THRESHOLDS.handoffContextPct,
+      recentToolCalls: alternatingCalls('a.js', 'b.js', 3),
+    });
+    const decision = decide(state);
+    assert.equal(decision.action, ACTIONS.HANDOFF);
+  });
+
+  test('missing recentToolCalls does not throw', () => {
+    const state = givenResourceState({ contextUsedPct: THRESHOLDS.compactContextPct });
+    delete state.recentToolCalls;
+    assert.doesNotThrow(() => decide(state));
+  });
+});
+
+describe('Task 14 — cache-thrash observation', () => {
+  test('attaches an observation after 2 consecutive thrash turns, even under CONTINUE', () => {
+    const state = givenResourceState({ consecutiveCacheThrashTurns: 2 });
+    const decision = decide(state);
+    assert.equal(decision.action, ACTIONS.CONTINUE);
+    assert.ok(decision.reasons.some((r) => r.includes('prompt cache written but not read')));
+  });
+
+  test('does not attach after only 1 thrash turn', () => {
+    const state = givenResourceState({ consecutiveCacheThrashTurns: 1 });
+    const decision = decide(state);
+    assert.equal(decision.reasons.length, 1);
+  });
+
+  test('missing consecutiveCacheThrashTurns does not throw', () => {
+    const state = givenResourceState();
+    assert.doesNotThrow(() => decide(state));
+  });
+});
+
 describe('STOP', () => {
   test('no current input path returns STOP — v0 never emits it (documents reachability, not a rule)', () => {
     const state = givenResourceState({

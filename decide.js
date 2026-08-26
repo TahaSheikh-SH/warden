@@ -179,6 +179,99 @@ function repeatedFileAccessObservation(state) {
   );
 }
 
+// Task 13: cyclic tool-call detection. Lee et al. 2026 (arXiv:2602.14798)
+// measure up to 142x token amplification from cyclic tool-call trajectories
+// where "individually trivial or plausible tool calls compose into cyclic
+// trajectories" with "no single step looking abnormal" — invisible to every
+// token-based rule above. Warden's current response makes it worse: smooth
+// growth reads as COMPACT, which discards the loop's evidence and refills the
+// budget it's consuming. So this rule runs before exceedsCompactThreshold/
+// isBurstingBurnRate in RULES and turns what would be COMPACT into CHECKPOINT
+// instead — suppression, not diagnosis: benign overthinking produces the same
+// observable as the paper's malicious-tool threat model, so this reports the
+// signature only, never "attack" or "loop bug".
+//
+// Cycle length/repeat count are definitional floors, not backtested
+// magnitudes (Known gap #1) — same bar as Task 12's REPEATED_ACCESS_MIN_COUNT.
+// Length 1 is excluded: a single call repeating is Task 12's signal (file
+// re-access), not an actual cycle; the shortest real cycle alternates between
+// >=2 distinct calls, and "cyclic" requires that pattern to repeat >=2 times.
+const CYCLE_MIN_LENGTH = 2;
+const CYCLE_MIN_REPEATS = 2;
+
+function toolCallKey(call) {
+  if (!call || !call.toolName) return null;
+  return `${call.toolName}:${call.targetPath || ''}`;
+}
+
+// Smallest-first: checks whether the trailing `cycleLength` calls exactly
+// repeat the `cycleLength` calls immediately before them, for the tightest
+// cycle length first. Calls with no toolName break the key sequence (treated
+// as non-matching) rather than aborting detection entirely.
+function detectToolCallCycle(recentToolCalls) {
+  const keys = recentToolCalls.map(toolCallKey);
+  const n = keys.length;
+  const maxCycleLength = Math.floor(n / CYCLE_MIN_REPEATS);
+  for (let cycleLength = CYCLE_MIN_LENGTH; cycleLength <= maxCycleLength; cycleLength += 1) {
+    const tail = keys.slice(n - cycleLength);
+    const priorBlock = keys.slice(n - 2 * cycleLength, n - cycleLength);
+    const matches = tail.every((key, i) => key !== null && key === priorBlock[i]);
+    // A degenerate pattern (every slot the same key) is the same call
+    // repeating — that's Task 12's file-re-access signal, not an actual
+    // alternating cycle, even though it trivially satisfies "block equals
+    // prior block" at every even cycleLength.
+    if (matches && new Set(tail).size >= 2) {
+      return { cycleLength, pattern: tail };
+    }
+  }
+  return null;
+}
+
+function isCyclicToolCallLoop(state) {
+  const recentToolCalls = state.recentToolCalls || [];
+  const cycle = detectToolCallCycle(recentToolCalls);
+  if (!cycle) return null;
+  return {
+    action: ACTIONS.CHECKPOINT,
+    reason:
+      `observation: tool-call cycle detected — [${cycle.pattern.join(', ')}] ` +
+      `repeating in the last ${recentToolCalls.length} tool calls (Lee et al. ` +
+      `2026, arXiv:2602.14798 — cyclic tool-call trajectories can inflate ` +
+      `tokens up to 142x with no single step looking abnormal; this is the ` +
+      `signature, not a diagnosis — benign overthinking produces the same ` +
+      `observable). COMPACT suppressed here: compacting would discard the ` +
+      `loop's evidence and refill the budget it's consuming.`,
+  };
+}
+
+// Task 14: cache-thrash advisory. Repeated full-price cache writes with no
+// cache read at all means the 5-minute TTL keeps expiring between turns,
+// re-paying ~1.25x base input for a full prefix rewrite every turn (Bai et
+// al. 2026 — input tokens dominate agentic cost even with caching enabled;
+// Manus reports a 10x cost reduction from KV-cache discipline). Gate B
+// degrades to 3/4: Codex has no cache-write analog
+// (lastTurnCacheCreationTokens stays null there), so the streak never forms
+// and this rule silently never fires — the same stand-down-on-null pattern as
+// every other degraded signal, not a special case.
+//
+// Decided 2026-08-26: no sixth action. This rides alongside whatever action
+// the RULES pipeline already picked (unlike Task 12/13, which are restricted
+// to CHECKPOINT/HANDOFF) — cache thrash is a cost problem independent of
+// context-window state, so it can be worth surfacing even under CONTINUE.
+const CACHE_THRASH_MIN_STREAK = 2;
+
+function cacheThrashObservation(state) {
+  const streak = state.consecutiveCacheThrashTurns || 0;
+  if (streak < CACHE_THRASH_MIN_STREAK) return null;
+  return (
+    `observation: prompt cache written but not read for ${streak} consecutive ` +
+    `turns — the 5-minute TTL may be expiring between turns, repaying ~1.25x ` +
+    `base input as a full prefix rewrite each time (Bai et al. 2026; Manus ` +
+    `reports a 10x cost reduction from KV-cache discipline). Not measurable on ` +
+    `harnesses that report no cache-write figure at all (e.g. Codex).`
+  );
+}
+
 function withinAllThresholds(state) {
   return {
     action: ACTIONS.CONTINUE,
@@ -196,6 +289,7 @@ function withinAllThresholds(state) {
 const RULES = [
   exceedsHandoffThreshold,
   isRepeatedCompactionDegrading,
+  isCyclicToolCallLoop,
   exceedsCompactThreshold,
   isBurstingBurnRate,
   isLongUncompactedSession,
@@ -224,6 +318,8 @@ function finalizeDecision(state, action, reason) {
     const observation = repeatedFileAccessObservation(state);
     if (observation) reasons.push(observation);
   }
+  const cacheThrash = cacheThrashObservation(state);
+  if (cacheThrash) reasons.push(cacheThrash);
   return { action, reasons };
 }
 

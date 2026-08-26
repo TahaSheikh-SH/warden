@@ -93,6 +93,11 @@ function initialAccumulator() {
     recentTurnTokens: [],
     turnsSinceLastCompaction: 0,
     recentToolCalls: [],
+    // Task 14: consecutive turns where a cache write happened with no cache
+    // read at all. Resets on any turn that reads the cache, or reports null
+    // (Codex) — a harness that can't measure a write can't confirm a thrash
+    // turn either, so it must not extend a streak measured on other harnesses.
+    consecutiveCacheThrashTurns: 0,
   };
 }
 
@@ -158,6 +163,10 @@ function applyAssistantUsage(accumulator, entry) {
 
   accumulator.lastTurnCacheReadTokens = cacheRead;
   accumulator.lastTurnCacheCreationTokens = cacheCreation;
+  const isThrashTurn = cacheCreation !== null && cacheCreation > 0 && cacheRead === 0;
+  accumulator.consecutiveCacheThrashTurns = isThrashTurn
+    ? accumulator.consecutiveCacheThrashTurns + 1
+    : 0;
   accumulator.lastTurnContextTokens = input + cacheRead + (cacheCreation || 0);
   accumulator.recentTurnTokens.push(accumulator.lastTurnContextTokens);
   if (accumulator.recentTurnTokens.length > GROWTH_WINDOW_TURNS) {
@@ -251,6 +260,7 @@ function finalizeAccumulator(accumulator, opts = {}) {
     messageCount: accumulator.messageCount,
     assistantUsageCount: accumulator.assistantUsageCount,
     recentToolCalls: accumulator.recentToolCalls,
+    consecutiveCacheThrashTurns: accumulator.consecutiveCacheThrashTurns,
   };
 }
 
