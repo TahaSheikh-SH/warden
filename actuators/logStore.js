@@ -7,10 +7,16 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { sweepDirectory } = require('./retention');
 
 const LOG_DIR = path.join(os.homedir(), '.warden');
 const LOG_FILE = path.join(LOG_DIR, 'log.jsonl');
 const SESSIONS_DIR = path.join(LOG_DIR, 'sessions');
+
+// One file per session accumulates forever otherwise. Age-based
+// (not count-based): an actively-running long session's log must never be
+// swept out from under it just because many other sessions exist.
+const SESSIONS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 // One file per session, so sessions don't contend for one growing log.
 // sessionKey is often a full transcript path, so collapse unsafe chars —
@@ -73,6 +79,9 @@ function appendLogEntry(entry, logFile = sessionLogFile(entry.sessionKey)) {
     const logDir = path.dirname(logFile);
     if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
     fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
+    // Only the real sessions directory, never an explicit test/override path
+    // — this is a live sweep on write, not something a caller opts into.
+    if (logDir === SESSIONS_DIR) sweepDirectory(SESSIONS_DIR, { maxAgeMs: SESSIONS_MAX_AGE_MS });
   } catch {
     // logging must never block or crash the caller
   }

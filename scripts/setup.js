@@ -11,10 +11,15 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { sweepDirectory } = require('../actuators/retention');
 const {
   withWardenStatusLineRegistered,
+  withWardenStatusLineUnregistered,
   wrapperScriptContents,
+  parsePreviousCommandFromWrapper,
+  statusLineDriftMessage,
   registerStatusLine,
+  unregisterStatusLine,
 } = require('./statuslineRegistration');
 
 const SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
@@ -40,6 +45,26 @@ function loadSettings(settingsPath) {
   return JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
 }
 
+// Repeated install/uninstall cycles otherwise accumulate one *.bak.<epoch>
+// file per cycle forever — keep only the newest few per source file.
+const BACKUP_KEEP_NEWEST = 5;
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function backupWithRetention(filePath, label) {
+  if (!fs.existsSync(filePath)) return null;
+  const backupPath = `${filePath}.bak.${Date.now()}`;
+  fs.copyFileSync(filePath, backupPath);
+  console.log(`${label}: backed up existing file to ${backupPath}`);
+  sweepDirectory(path.dirname(filePath), {
+    keepNewest: BACKUP_KEEP_NEWEST,
+    pattern: new RegExp(`^${escapeRegExp(path.basename(filePath))}\\.bak\\.\\d+$`),
+  });
+  return backupPath;
+}
+
 function isWardenHookEntry(entry, adapterPath) {
   return (entry.hooks || []).some(
     (hook) => hook.type === 'command' && hook.command && hook.command.includes(adapterPath),
@@ -61,6 +86,31 @@ function withWardenHookRegistered(settings, adapterPath) {
   return { settings: next, changed: true };
 }
 
+// Inverse of withWardenHookRegistered. Drops the UserPromptSubmit key
+// entirely once empty (rather than leaving `[]`), and hooks too if that was
+// the only key it had — so a settings file that only ever had warden's hook
+// installed comes back byte-identical to what it was before install.
+function withWardenHookUnregistered(settings, adapterPath) {
+  const existing = (settings.hooks || {}).UserPromptSubmit || [];
+  const remaining = existing.filter((entry) => !isWardenHookEntry(entry, adapterPath));
+  if (remaining.length === existing.length) return { settings, changed: false };
+
+  const nextHooks = { ...settings.hooks };
+  if (remaining.length) {
+    nextHooks.UserPromptSubmit = remaining;
+  } else {
+    delete nextHooks.UserPromptSubmit;
+  }
+
+  const next = { ...settings };
+  if (Object.keys(nextHooks).length) {
+    next.hooks = nextHooks;
+  } else {
+    delete next.hooks;
+  }
+  return { settings: next, changed: true };
+}
+
 // Claude Code and Codex share the hook file shape, so they share this.
 // Idempotent per adapterPath.
 function registerHook(settingsPath, adapterPath, harnessLabel) {
@@ -77,14 +127,26 @@ function registerHook(settingsPath, adapterPath, harnessLabel) {
     return;
   }
 
-  if (fs.existsSync(settingsPath)) {
-    const backupPath = `${settingsPath}.bak.${Date.now()}`;
-    fs.copyFileSync(settingsPath, backupPath);
-    console.log(`${harnessLabel}: backed up existing settings to ${backupPath}`);
-  }
+  backupWithRetention(settingsPath, harnessLabel);
 
   fs.writeFileSync(settingsPath, `${JSON.stringify(after, null, 2)}\n`);
   console.log(`${harnessLabel}: warden hook registered in ${settingsPath}.`);
+}
+
+// Inverse of registerHook. No-ops when warden's hook isn't present.
+function unregisterHook(settingsPath, adapterPath, harnessLabel) {
+  const before = loadSettings(settingsPath);
+  const { settings: after, changed } = withWardenHookUnregistered(before, adapterPath);
+
+  if (!changed) {
+    console.log(`${harnessLabel}: warden hook not registered in ${settingsPath} — nothing to do.`);
+    return;
+  }
+
+  backupWithRetention(settingsPath, harnessLabel);
+
+  fs.writeFileSync(settingsPath, `${JSON.stringify(after, null, 2)}\n`);
+  console.log(`${harnessLabel}: warden hook removed from ${settingsPath}.`);
 }
 
 // Codex runs no hooks at all unless `[features] hooks = true`. Editing TOML
@@ -115,6 +177,25 @@ function withWardenArrayEntryRegistered(settings, arrayKey, entryPath, baseDir) 
   return { settings: next, changed: true };
 }
 
+// Inverse of withWardenArrayEntryRegistered. Drops arrayKey entirely once
+// empty, so a settings file that only ever had warden's entry comes back
+// byte-identical to what it was before install.
+function withWardenArrayEntryUnregistered(settings, arrayKey, entryPath, baseDir) {
+  const existing = settings[arrayKey] || [];
+  const remaining = existing.filter(
+    (existingPath) => path.resolve(baseDir, existingPath) !== entryPath,
+  );
+  if (remaining.length === existing.length) return { settings, changed: false };
+
+  const next = { ...settings };
+  if (remaining.length) {
+    next[arrayKey] = remaining;
+  } else {
+    delete next[arrayKey];
+  }
+  return { settings: next, changed: true };
+}
+
 // Idempotent per entryPath.
 function registerArrayEntry(filePath, arrayKey, entryPath, harnessLabel) {
   const dir = path.dirname(filePath);
@@ -133,19 +214,54 @@ function registerArrayEntry(filePath, arrayKey, entryPath, harnessLabel) {
     return;
   }
 
-  if (fs.existsSync(filePath)) {
-    const backupPath = `${filePath}.bak.${Date.now()}`;
-    fs.copyFileSync(filePath, backupPath);
-    console.log(`${harnessLabel}: backed up existing config to ${backupPath}`);
-  }
+  backupWithRetention(filePath, harnessLabel);
 
   fs.writeFileSync(filePath, `${JSON.stringify(after, null, 2)}\n`);
   console.log(`${harnessLabel}: warden entry registered in ${filePath}.`);
 }
 
+// Inverse of registerArrayEntry. No-ops when warden's entry isn't present.
+function unregisterArrayEntry(filePath, arrayKey, entryPath, harnessLabel) {
+  const dir = path.dirname(filePath);
+  const before = loadSettings(filePath);
+  const { settings: after, changed } = withWardenArrayEntryUnregistered(
+    before,
+    arrayKey,
+    entryPath,
+    dir,
+  );
+
+  if (!changed) {
+    console.log(`${harnessLabel}: warden entry not registered in ${filePath} — nothing to do.`);
+    return;
+  }
+
+  backupWithRetention(filePath, harnessLabel);
+
+  fs.writeFileSync(filePath, `${JSON.stringify(after, null, 2)}\n`);
+  console.log(`${harnessLabel}: warden entry removed from ${filePath}.`);
+}
+
 function main() {
+  const uninstall = process.argv.includes('--uninstall');
+
+  if (uninstall) {
+    unregisterHook(SETTINGS_PATH, NATIVE_ADAPTER_PATH, 'Claude Code');
+    unregisterStatusLine(SETTINGS_PATH, STATUSLINE_PATH, STATUSLINE_WRAPPER_PATH, loadSettings);
+    unregisterHook(CODEX_HOOKS_PATH, CODEX_ACTUATOR_PATH, 'Codex CLI');
+    unregisterArrayEntry(PI_SETTINGS_PATH, 'packages', PI_EXTENSION_PATH, 'Pi');
+    unregisterArrayEntry(OPENCODE_CONFIG_PATH, 'plugin', OPENCODE_PLUGIN_PATH, 'OpenCode');
+    return;
+  }
+
   registerHook(SETTINGS_PATH, NATIVE_ADAPTER_PATH, 'Claude Code');
   registerStatusLine(SETTINGS_PATH, STATUSLINE_PATH, STATUSLINE_WRAPPER_PATH, loadSettings);
+  const driftMessage = statusLineDriftMessage(
+    loadSettings(SETTINGS_PATH),
+    STATUSLINE_PATH,
+    STATUSLINE_WRAPPER_PATH,
+  );
+  if (driftMessage) console.log(driftMessage);
   registerHook(CODEX_HOOKS_PATH, CODEX_ACTUATOR_PATH, 'Codex CLI');
   checkCodexHooksFeatureFlag();
   registerArrayEntry(PI_SETTINGS_PATH, 'packages', PI_EXTENSION_PATH, 'Pi');
@@ -156,7 +272,18 @@ if (require.main === module) main();
 
 module.exports = {
   withWardenHookRegistered,
+  withWardenHookUnregistered,
   withWardenArrayEntryRegistered,
+  withWardenArrayEntryUnregistered,
   withWardenStatusLineRegistered,
+  withWardenStatusLineUnregistered,
   wrapperScriptContents,
+  parsePreviousCommandFromWrapper,
+  statusLineDriftMessage,
+  registerHook,
+  unregisterHook,
+  registerArrayEntry,
+  unregisterArrayEntry,
+  registerStatusLine,
+  unregisterStatusLine,
 };

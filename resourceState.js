@@ -24,10 +24,15 @@ const {
   readAutoCompactWindowFromSettings,
 } = require('./harnesses/claude-code/contextWindow');
 const { decide } = require('./decide');
+const { sweepDirectory } = require('./actuators/retention');
 
 // Hook adapters spawn a fresh process per turn, so the accumulator is
 // persisted between invocations — otherwise every turn re-folds from line 1.
 const CACHE_DIR = path.join(os.homedir(), '.warden', 'cache');
+
+// One file per session accumulates in the cache forever otherwise.
+// Age-based, same rationale as actuators/logStore.js's SESSIONS_MAX_AGE_MS.
+const CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 // A short hash of the raw key is appended because sanitizing unsafe
 // characters alone is lossy (e.g. "/a/b" and "a-b" both collapse to "a_b"),
@@ -56,6 +61,7 @@ function writeAccumulatorCache(sessionFilePath, cache) {
   try {
     if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
     fs.writeFileSync(cacheFileFor(sessionFilePath), JSON.stringify(cache));
+    sweepDirectory(CACHE_DIR, { maxAgeMs: CACHE_MAX_AGE_MS });
   } catch {
     // caching is a perf optimization only, never blocks the decision
   }

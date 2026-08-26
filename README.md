@@ -27,6 +27,17 @@ npm run setup
 Pi and OpenCode don't have a hook registry, so setup prints a manual step
 instead.
 
+`npm run setup -- --uninstall` reverses every registration setup made —
+Claude Code and Codex hooks, the Pi and OpenCode config entries, and the
+Claude Code statusLine (restoring whatever command it pointed at before,
+recovered from the generated wrapper script). Each registration file is
+backed up before either install or uninstall touches it; only the newest 5
+backups per file are kept. `~/.warden/sessions` and `~/.warden/cache` are
+swept for entries older than 30 days on every write, so neither grows
+without bound. Setup also warns if `statusLine` is configured but points at
+neither warden nor its generated wrapper — meaning warden's decision line
+isn't visible anywhere.
+
 ## Usage
 
 Just printing the recommendation:
