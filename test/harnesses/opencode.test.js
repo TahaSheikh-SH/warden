@@ -36,6 +36,7 @@ describe('opencode normalizeEvent', () => {
     assert.equal(normalized.sessionId, 'ses_1');
     assert.equal(normalized.providerID, 'anthropic');
     assert.equal(normalized.modelID, 'claude-sonnet-5');
+    assert.equal(normalized.messageId, null); // no id in this fixture
   });
 
   test('ignores a message.updated user event (no usage on user turns)', () => {

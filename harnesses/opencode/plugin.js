@@ -5,6 +5,14 @@
 // core on each `event`. The nudge reaches the model through
 // `experimental.chat.system.transform`, this harness's equivalent of Claude
 // Code's additionalContext.
+//
+// Export contract: opencode loads config-file plugins through readV1Plugin,
+// which requires the default export to carry `id` and `server` (schema v1).
+// The legacy loader (getLegacyPlugins) rejects a bag of named functions — it
+// iterates every module export, including the CJS interop `default`/
+// `module.exports` objects, and throws on the first non-function value, which
+// opencode swallows and the plugin silently never registers. The helpers stay
+// as named exports for the plugin tests; the loader only reaches `server`.
 
 const {
   reduceTranscriptEntries,
@@ -64,7 +72,21 @@ function createSessionEvaluator({ contextWindowTokens, client, logFilePath } = {
       const sessionKey = normalized.sessionId || fallbackSessionKey;
       if (!entriesBySession.has(sessionKey)) entriesBySession.set(sessionKey, []);
       const entries = entriesBySession.get(sessionKey);
-      entries.push(normalized);
+      // message.updated re-fires once per stream frame with the same id, each
+      // carrying that message's cumulative usage so far — that's one real
+      // turn, not N. Pushing every frame would inflate messageCount and
+      // turnsSinceLastCompaction and corrupt the growth projection, so replace
+      // the previous frame of the same message: one entry per message, with
+      // the final (most complete) usage. Not part of the shared entry shape;
+      // the core ignores messageId.
+      const messageId = normalized.messageId || null;
+      if (messageId) {
+        const existingIndex = entries.findIndex((entry) => entry.messageId === messageId);
+        if (existingIndex >= 0) entries[existingIndex] = normalized;
+        else entries.push(normalized);
+      } else {
+        entries.push(normalized);
+      }
 
       if (normalized.providerID && normalized.modelID) {
         const resolved = await resolveContextWindowTokens(
@@ -215,4 +237,11 @@ async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindow
   };
 }
 
-module.exports = { WardenPlugin, createSessionEvaluator, respondFor, showToastForAction };
+module.exports = {
+  id: 'warden',
+  server: WardenPlugin,
+  WardenPlugin,
+  createSessionEvaluator,
+  respondFor,
+  showToastForAction,
+};

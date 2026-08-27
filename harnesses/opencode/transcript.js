@@ -28,6 +28,12 @@ function normalizeMessageUpdated(event) {
     usage: isAssistant ? usageFromTokens(info.tokens) : null,
     isCompactionBoundary: false,
     sessionId: info.sessionID || null,
+    // Adapter-local field, not part of the shared core entry shape: opencode
+    // re-fires message.updated once per stream frame with the same id, and
+    // plugin.js uses this to collapse the frames of one message into a
+    // single assistant entry (last frame wins — it carries the most complete
+    // cumulative usage). The shared core ignores it.
+    messageId: info.id || null,
     cwd: null,
     gitBranch: null,
     // Which real context window applies. Not part of the shared entry shape:

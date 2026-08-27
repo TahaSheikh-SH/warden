@@ -85,4 +85,36 @@ describe('opencode createSessionEvaluator', () => {
     );
     assert.equal(resultB.decision.action, ACTIONS.CONTINUE);
   });
+
+  test('streaming frames of one message collapse into a single assistant entry, last frame wins', async () => {
+    // opencode re-fires message.updated once per stream frame, same id, each
+    // with that message's cumulative usage. All the frames of one message are
+    // a single real turn — they must count once, and the final frame's usage
+    // must be the one kept.
+    const evaluator = createSessionEvaluator({ contextWindowTokens: 1000000 });
+    const frame = (messageId, inputTokens) => ({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: messageId,
+          role: 'assistant',
+          sessionID: 'ses_stream',
+          tokens: { input: inputTokens, output: 10, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+      },
+    });
+
+    let lastFrame;
+    for (const tokens of [10000, 15000, 20000]) {
+      lastFrame = await evaluator.ingest(frame('msg_a', tokens), 'fallback');
+    }
+    const nextMessage = await evaluator.ingest(frame('msg_b', 30000), 'fallback');
+
+    assert.equal(lastFrame.state.messageCount, 1, 'one message must count as one turn');
+    assert.equal(lastFrame.state.turnsSinceLastCompaction, 1);
+    assert.equal(lastFrame.state.contextUsedTokens, 20000, 'final frame usage wins');
+    assert.equal(nextMessage.state.messageCount, 2);
+    assert.equal(nextMessage.state.contextUsedTokens, 30000);
+    assert.equal(nextMessage.state.contextGrowthPerTurn, 10000);
+  });
 });
