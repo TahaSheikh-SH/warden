@@ -89,16 +89,6 @@ comments):
 - Claude Code is advisory-only, including `STOP` — it can't hard-block a
   turn. Codex can; Pi/OpenCode can only notify harder.
 - Codex has no status-line equivalent; `WARDEN_NOTIFY` is its only nudge.
-- opencode's `experimental.chat.system.transform` fires once per prepared LLM
-  request, not once per user turn — it also fires for an invisible
-  title-generator request the model never sees. `PluginInput` gives no field
-  distinguishing that request from the main agent's, so warden matches a
-  substring of opencode's own system prompt to tell them apart
-  (`harnesses/opencode/plugin.js`, `isMainAgentTransform`). That match breaks
-  silently if opencode rewords its prompt. This should be an upstream
-  request: a `type`/`purpose` field on the transform hook's input, or on the
-  request itself, so plugins can target the main agent request without
-  string-matching prose they don't own.
 
 ## Contributing
 
