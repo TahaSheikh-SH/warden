@@ -147,16 +147,68 @@ function isMainAgentTransform(output) {
   return typeof first === 'string' && first.includes('interactive CLI tool');
 }
 
-// Best-effort, so the nudge is visible now and not only to the next turn's
-// model. Fails open — older builds may lack tui.showToast.
-async function showToastForAction(client, action, message) {
+// Resolve the SDK call but never let a dead/unattached TUI hang warden's
+// event hook forever. Fails open (the system-prompt injection still delivers
+// the nudge).
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      const timer = setTimeout(() => reject(new Error(`no TUI ack in ${ms}ms`)), ms);
+      if (typeof timer.unref === 'function') timer.unref();
+    }),
+  ]);
+}
+
+// Best-effort so the nudge is visible now and not only to the next turn's
+// model. Fails open — older builds may lack tui.showToast. The toast is the
+// user-visibility half; the system-prompt injection is the steering half.
+async function showToastForAction(
+  client,
+  action,
+  message,
+  { timeoutMs = 1000, stderrWrite = process.stderr.write.bind(process.stderr) } = {},
+) {
   if (!client || !client.tui || typeof client.tui.showToast !== 'function') return;
   try {
-    await client.tui.showToast({
-      body: { message, variant: action === ACTIONS.STOP ? 'error' : 'warning' },
-    });
+    await withTimeout(
+      client.tui.showToast({
+        body: {
+          title: 'warden',
+          message,
+          variant: action === ACTIONS.STOP ? 'error' : 'warning',
+          duration: 5000,
+        },
+      }),
+      timeoutMs,
+    );
   } catch {
     // convenience layer; system-prompt injection still delivers the nudge
+    try {
+      stderrWrite(`[warden] ${message}\n`);
+    } catch {
+      // never let the fallback itself throw
+    }
+  }
+}
+
+// Drop the nudge text straight into the user's prompt box so it is visible
+// in the TUI — the sole channel today where the user sees warden acting
+// ("what happened?"). Fails open like showToastForAction.
+async function appendPromptForAction(
+  client,
+  message,
+  { timeoutMs = 1000, stderrWrite = process.stderr.write.bind(process.stderr) } = {},
+) {
+  if (!client || !client.tui || typeof client.tui.appendPrompt !== 'function') return;
+  try {
+    await withTimeout(client.tui.appendPrompt({ body: { text: message } }), timeoutMs);
+  } catch {
+    try {
+      stderrWrite(`[warden] ${message}\n`);
+    } catch {
+      // never let the fallback itself throw
+    }
   }
 }
 
@@ -232,6 +284,7 @@ async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindow
 
       pendingMessageBySession.set(sessionKey, message);
       await showToastForAction(client, effectiveDecision.action, message);
+      await appendPromptForAction(client, message);
     },
     'experimental.chat.system.transform': async (transformInput, output) => {
       const sessionKey = (transformInput && transformInput.sessionID) || fallbackSessionKey;
@@ -265,4 +318,5 @@ module.exports = {
   createSessionEvaluator,
   respondFor,
   showToastForAction,
+  appendPromptForAction,
 };
