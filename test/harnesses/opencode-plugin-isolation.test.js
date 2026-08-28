@@ -43,9 +43,13 @@ describe('WardenPlugin cross-session isolation', () => {
       await plugin.event(heavyEvent(`heavy_${turn}`));
     }
 
-    const heavyOutput = { system: [] };
+    const heavyOutput = {
+      system: [
+        'You are opencode, an interactive CLI tool that helps users with software engineering tasks.',
+      ],
+    };
     await plugin['experimental.chat.system.transform']({ sessionID: 'ses_heavy' }, heavyOutput);
-    assert.match(heavyOutput.system[0], /stop/i, 'session A must have escalated to STOP');
+    assert.match(heavyOutput.system[1], /stop/i, 'session A must have escalated to STOP');
     await assert.rejects(
       () => plugin['tool.execute.before']({ sessionID: 'ses_heavy' }),
       'session A tool calls must be blocked once it is STOP',
@@ -65,11 +69,15 @@ describe('WardenPlugin cross-session isolation', () => {
       },
     });
 
-    const lightOutput = { system: [] };
+    const lightOutput = {
+      system: [
+        'You are opencode, an interactive CLI tool that helps users with software engineering tasks.',
+      ],
+    };
     await plugin['experimental.chat.system.transform']({ sessionID: 'ses_light' }, lightOutput);
     assert.equal(
       lightOutput.system.length,
-      0,
+      1,
       "session B's system prompt must not receive session A's STOP nudge",
     );
     await assert.doesNotReject(

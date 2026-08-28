@@ -53,7 +53,7 @@ describe('WardenPlugin', () => {
     );
   });
 
-  test('a non-CONTINUE decision is injected into the next system-prompt transform, then cleared', async () => {
+  test('a non-CONTINUE decision is injected into the next main-agent system-prompt transform, then cleared', async () => {
     const logFilePath = path.join(
       os.tmpdir(),
       `warden-opencode-test-${process.hrtime.bigint()}.jsonl`,
@@ -72,14 +72,34 @@ describe('WardenPlugin', () => {
       },
     });
 
-    const output = { system: [] };
-    await plugin['experimental.chat.system.transform']({ sessionID: 'ses_3' }, output);
-    assert.equal(output.system.length, 1);
-    assert.match(output.system[0], /\[warden\]/);
+    // The title-generator request fires first in the real runtime; it must not
+    // consume the pending nudge.
+    const titleOutput = {
+      system: ['You are a title generator. You output ONLY a thread title. NNN'],
+    };
+    await plugin['experimental.chat.system.transform']({ sessionID: 'ses_3' }, titleOutput);
+    assert.equal(
+      titleOutput.system.length,
+      1,
+      'title-generator request must not swallow the nudge',
+    );
 
-    const secondOutput = { system: [] };
+    const output = {
+      system: [
+        'You are opencode, an interactive CLI tool that helps users with software engineering tasks.',
+      ],
+    };
+    await plugin['experimental.chat.system.transform']({ sessionID: 'ses_3' }, output);
+    assert.equal(output.system.length, 2);
+    assert.match(output.system[1], /\[warden\]/);
+
+    const secondOutput = {
+      system: [
+        'You are opencode, an interactive CLI tool that helps users with software engineering tasks.',
+      ],
+    };
     await plugin['experimental.chat.system.transform']({ sessionID: 'ses_3' }, secondOutput);
-    assert.equal(secondOutput.system.length, 0);
+    assert.equal(secondOutput.system.length, 1);
   });
 });
 
@@ -147,11 +167,15 @@ describe('WardenPlugin STOP escalation', () => {
     let finalOutput;
     for (let turn = 0; turn < 6; turn++) {
       await plugin.event({ event: handoffEvent });
-      finalOutput = { system: [] };
+      finalOutput = {
+        system: [
+          'You are opencode, an interactive CLI tool that helps users with software engineering tasks.',
+        ],
+      };
       await plugin['experimental.chat.system.transform']({ sessionID }, finalOutput);
     }
 
-    assert.match(finalOutput.system[0], /stop/i);
+    assert.match(finalOutput.system[1], /stop/i);
     assert.ok(
       fs.existsSync(logFilePath),
       'escalation must log to the injected path, not the real default',

@@ -51,24 +51,40 @@ describe('WardenPlugin nudge dedup', () => {
     await plugin.event(assistantEvent('msg_1', 150000));
 
     assert.equal(toasts.length, 1);
-    const output = { system: [] };
+    const output = {
+      system: [
+        'You are opencode, an interactive CLI tool that helps users with software engineering tasks.',
+      ],
+    };
     await plugin['experimental.chat.system.transform']({ sessionID: 'ses_dedup' }, output);
-    assert.equal(output.system.length, 1);
+    assert.equal(output.system.length, 2);
   });
 
   test('suppresses the same action on the next turn', async () => {
     const { plugin, toasts } = await pluginWithToastLog(tempLogFilePath());
     await plugin.event(assistantEvent('msg_1', 150000));
     // Drain the first turn's injection, so what the second turn queues (or
-    // doesn't) is what this asserts on.
-    await plugin['experimental.chat.system.transform']({ sessionID: 'ses_dedup' }, { system: [] });
+    // doesn't) is what this asserts on. Drain through a main-agent-shaped
+    // transform, mirroring the real runtime's request shape.
+    await plugin['experimental.chat.system.transform'](
+      { sessionID: 'ses_dedup' },
+      {
+        system: [
+          'You are opencode, an interactive CLI tool that helps users with software engineering tasks.',
+        ],
+      },
+    );
 
     await plugin.event(assistantEvent('msg_2', 160000));
 
     assert.equal(toasts.length, 1);
-    const output = { system: [] };
+    const output = {
+      system: [
+        'You are opencode, an interactive CLI tool that helps users with software engineering tasks.',
+      ],
+    };
     await plugin['experimental.chat.system.transform']({ sessionID: 'ses_dedup' }, output);
-    assert.equal(output.system.length, 0);
+    assert.equal(output.system.length, 1);
   });
 
   test('still shows a nudge when the action escalates to a different one', async () => {

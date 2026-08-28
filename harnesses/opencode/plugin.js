@@ -130,6 +130,23 @@ function targetPathFromArgs(args) {
 
 const respondFor = nudgeMessageFor;
 
+// The transform hook fires once per prepared LLM request, not once per user
+// turn: opencode also prepares an invisible title-generator request (its
+// system[0] is "You are a title generator...") ~1s before the main agent
+// request. A single-shot nudge consumed on the first fire ends up in that
+// throwaway request and the model never sees it, so only deliver into the
+// main agent's system segment.
+//
+// Fragile by necessity: PluginInput's transform hook carries no field marking
+// a request as auxiliary vs. main-agent (see README's opencode upstream-issue
+// note), so this matches a substring of opencode's own system prompt. If
+// opencode rewords that prompt, this silently stops matching and the nudge
+// reverts to being dropped — there is no stronger signal available today.
+function isMainAgentTransform(output) {
+  const first = output && output.system && output.system[0];
+  return typeof first === 'string' && first.includes('interactive CLI tool');
+}
+
 // Best-effort, so the nudge is visible now and not only to the next turn's
 // model. Fails open — older builds may lack tui.showToast.
 async function showToastForAction(client, action, message) {
@@ -220,6 +237,10 @@ async function WardenPlugin(input, { logFilePath, notifyOpts = {}, contextWindow
       const sessionKey = (transformInput && transformInput.sessionID) || fallbackSessionKey;
       const pendingMessage = pendingMessageBySession.get(sessionKey);
       if (!pendingMessage) return;
+      // Skip auxiliary requests (e.g. the invisible title generator) — the
+      // nudge must reach the main agent, and delivering to the first fire
+      // would consume it into a request the user never sees.
+      if (!isMainAgentTransform(output)) return;
       output.system.push(pendingMessage);
       pendingMessageBySession.delete(sessionKey);
     },
